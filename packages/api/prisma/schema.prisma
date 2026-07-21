@@ -1,0 +1,73 @@
+// Data model for accounts, contacts, and transfer history.
+// File contents never touch the server in P2P mode — `transfers` stores metadata
+// only, which keeps the privacy story simple (nothing sensitive to leak or purge).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  displayName  String   @map("display_name")
+  // email and telegramId are both nullable: a user may link only one method.
+  email        String?  @unique
+  passwordHash String?  @map("password_hash")
+  telegramId   BigInt?  @unique @map("telegram_id")
+  // UI accent preset key (e.g. "green", "cobalt"), follows the user across devices.
+  accentPreference String? @map("accent_preference")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  contactsOwned     Contact[]  @relation("ContactOwner")
+  contactsReceived  Contact[]  @relation("ContactTarget")
+  sentTransfers     Transfer[] @relation("TransferSender")
+  receivedTransfers Transfer[] @relation("TransferRecipient")
+
+  @@map("users")
+}
+
+// A directed edge owner -> contact. Mutual acceptance is modelled by inserting
+// the reverse edge when the other side accepts, so a user can't be silently
+// added to someone's contacts without their own matching edge existing.
+model Contact {
+  id            String   @id @default(cuid())
+  ownerUserId   String   @map("owner_user_id")
+  contactUserId String   @map("contact_user_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  owner   User @relation("ContactOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  contact User @relation("ContactTarget", fields: [contactUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerUserId, contactUserId])
+  @@index([contactUserId])
+  @@map("contacts")
+}
+
+enum TransferStatus {
+  completed
+  failed
+}
+
+model Transfer {
+  id              String         @id @default(cuid())
+  senderUserId    String         @map("sender_user_id")
+  // recipient may be null for a one-off transfer to a non-account peer.
+  recipientUserId String?        @map("recipient_user_id")
+  fileName        String         @map("file_name")
+  fileSize        BigInt         @map("file_size")
+  status          TransferStatus
+  // Human-readable reason, set when status is `failed`.
+  failureReason   String?        @map("failure_reason")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  sender    User  @relation("TransferSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  recipient User? @relation("TransferRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+
+  @@index([senderUserId, createdAt])
+  @@index([recipientUserId, createdAt])
+  @@map("transfers")
+}

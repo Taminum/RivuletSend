@@ -1,0 +1,78 @@
+# Full stack for local testing:
+#   docker compose up --build
+# Then open http://localhost:5173
+#
+# Ports (host): web 5173, api 8081, signaling 8080, postgres 5432.
+# The web build inlines the api/signaling URLs, so they point at the host ports.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: p2p
+      POSTGRES_PASSWORD: p2p
+      POSTGRES_DB: p2p
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U p2p"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    # Apply migrations, then start.
+    command: sh -c "pnpm --filter @p2p/api exec prisma migrate deploy && node packages/api/dist/server.js"
+    environment:
+      NODE_ENV: production
+      PORT: 8081
+      DATABASE_URL: postgresql://p2p:p2p@postgres:5432/p2p?schema=public
+      JWT_SECRET: local-docker-test-secret-not-for-prod
+      INTERNAL_API_SECRET: local-docker-internal-secret
+      WEB_ORIGIN: http://localhost:5173
+      COOKIE_SECURE: "false"
+      # To enable Telegram login, set your bot token here (and the bot username
+      # as a web build arg below):
+      # TELEGRAM_BOT_TOKEN: "123456:ABC-..."
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  signaling:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: node packages/signaling/dist/server.js
+    environment:
+      PORT: 8080
+      # Must match the api's JWT_SECRET and INTERNAL_API_SECRET.
+      JWT_SECRET: local-docker-test-secret-not-for-prod
+      INTERNAL_SECRET: local-docker-internal-secret
+      API_INTERNAL_URL: http://api:8081
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+      args:
+        VITE_API_URL: http://localhost:8081
+        VITE_SIGNALING_URL: ws://localhost:8080
+        # VITE_TELEGRAM_BOT_USERNAME: your_bot
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+      - signaling
+
+volumes:
+  pgdata:

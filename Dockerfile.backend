@@ -1,0 +1,24 @@
+# Builds the API and signaling services from the monorepo. One image, two
+# services (docker-compose overrides the command per service).
+# Debian-slim (not Alpine) so Prisma's engine + OpenSSL just work.
+# Build context must be the repo root.
+FROM node:20-slim
+
+# Prisma needs OpenSSL present; install it before pnpm install/generate so the
+# matching query engine (openssl-3.0.x) is selected.
+RUN apt-get update -y && apt-get install -y openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
+
+WORKDIR /repo
+COPY . .
+
+RUN pnpm install --frozen-lockfile
+# Generate needs DATABASE_URL to exist (not to connect) — a placeholder is fine.
+RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" \
+    pnpm --filter @p2p/api exec prisma generate
+RUN pnpm --filter @p2p/api build && pnpm --filter @p2p/signaling build
+
+# Overridden per service in docker-compose.
+CMD ["node", "packages/api/dist/server.js"]

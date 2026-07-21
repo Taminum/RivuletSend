@@ -1,0 +1,27 @@
+{
+  "name": "p2p-transfer",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev:signaling": "pnpm --filter @p2p/signaling dev",
+    "dev:web": "pnpm --filter @p2p/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "prisma",
+      "@prisma/client",
+      "@prisma/engines",
+      "electron",
+      "electron-winstaller"
+    ]
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}
