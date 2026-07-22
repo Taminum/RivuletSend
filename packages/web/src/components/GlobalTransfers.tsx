@@ -12,6 +12,8 @@ export function GlobalTransfers() {
   const { transfers, callStatus, callError, clearCallError } = usePresence();
   const [dismissed, setDismissed] = useState(false);
   const [preview, setPreview] = useState<Transfer | null>(null);
+  const [received, setReceived] = useState<Transfer[]>([]);
+  const announcedRef = useRef<Set<string>>(new Set());
   const prevCount = useRef(0);
 
   // A new transfer re-opens the panel even if previously dismissed.
@@ -20,13 +22,74 @@ export function GlobalTransfers() {
     prevCount.current = transfers.length;
   }, [transfers.length]);
 
+  // Announce each newly-completed incoming file/message with a centered pop-up
+  // (in addition to the corner panel), each transfer only once.
+  useEffect(() => {
+    const fresh = transfers.filter(
+      (t) =>
+        t.direction === "receive" &&
+        t.url &&
+        t.size > 0 &&
+        t.transferred >= t.size &&
+        !announcedRef.current.has(t.id),
+    );
+    if (fresh.length) {
+      fresh.forEach((t) => announcedRef.current.add(t.id));
+      setReceived((prev) => [...fresh, ...prev]);
+    }
+  }, [transfers]);
+
+  // Centered announcement for just-received files/messages (no content preview).
+  const isMessage = received.length === 1 && received[0].name === "message.txt";
+  const receivedTitle =
+    received.length > 1 ? "Files received" : isMessage ? "Message received" : "File received";
+  const receivedModal =
+    received.length > 0 ? (
+      <div className="modal-overlay" onClick={() => setReceived([])}>
+        <div className="modal received-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-head">
+            <div className="modal-title">
+              <div className="file-name">{receivedTitle}</div>
+            </div>
+            <button className="icon-btn" onClick={() => setReceived([])} title="Close">
+              <XIcon size={18} />
+            </button>
+          </div>
+          <div className="modal-body" style={{ display: "block" }}>
+            <ul className="file-list">
+              {received.map((t) => (
+                <li key={t.id} className="file-row">
+                  <FileIcon size={18} className="file-icon" />
+                  <span className="file-meta">
+                    <span className="file-name">{t.name || "file"}</span>
+                    <span className="file-sub">{formatBytes(t.size)}</span>
+                  </span>
+                  {t.url && (
+                    <a className="btn btn-primary btn-sm" href={t.url} download={t.name}>
+                      <ReceiveIcon size={14} /> Save
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    ) : null;
+
   const hasContent = transfers.length > 0 || callStatus === "connecting" || !!callError;
   if (!hasContent || dismissed) {
-    return preview ? <FilePreview transfer={preview} onClose={() => setPreview(null)} /> : null;
+    return (
+      <>
+        {receivedModal}
+        {preview && <FilePreview transfer={preview} onClose={() => setPreview(null)} />}
+      </>
+    );
   }
 
   return (
     <>
+      {receivedModal}
       <div className="global-transfers">
         <div className="gt-head">
           <span className="gt-title">Transfers</span>

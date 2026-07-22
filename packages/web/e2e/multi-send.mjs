@@ -73,6 +73,21 @@ async function main() {
     await link.waitFor({ state: "visible", timeout: 45000 });
     check("Bob received the file", true);
 
+    // A centered pop-up announces the receipt (no content preview) in addition
+    // to the corner panel.
+    const popup = bobPage.locator(".received-modal");
+    const popupShown = await popup
+      .waitFor({ state: "visible", timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    check("centered received pop-up shown", popupShown);
+    const popupName = await popup.locator(".file-name").last().textContent().catch(() => "");
+    check("pop-up names the received file", (popupName || "").includes(FILE_NAME), popupName || "");
+    const noPreview = (await popup.locator(".preview-image, .preview-pdf, .preview-text").count()) === 0;
+    check("pop-up has no content preview", noPreview);
+    const hasSave = await popup.locator(`a[download="${FILE_NAME}"]`).count();
+    check("pop-up offers a Save action", hasSave > 0);
+
     const integrity = await bobPage.evaluate(
       async ({ name, size }) => {
         const a = [...document.querySelectorAll("a[download]")].find(
