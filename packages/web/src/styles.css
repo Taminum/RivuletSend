@@ -974,6 +974,59 @@ a.btn-ghost.btn-sm {
   flex-shrink: 0;
 }
 
+/* Settings toggle switch (desktop auto-save) */
+.rs-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+}
+.rs-switch {
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--rs-border-strong);
+  padding: 2px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.rs-switch.on {
+  background: var(--rs-accent);
+  border-color: var(--rs-accent);
+}
+.rs-switch-knob {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.rs-switch.on .rs-switch-knob {
+  transform: translateX(18px);
+}
+.rs-path-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.rs-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--rs-radius-md);
+  padding: 9px 12px;
+}
+
 /* History row status as colored text (no separate icon system). */
 .hist-status {
   font-size: 12px;

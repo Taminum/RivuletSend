@@ -222,6 +222,21 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         url,
         mimeType: file.mimeType,
       });
+      // Desktop auto-save: this is the contact (presence) path, so it's eligible.
+      // The main process decides whether it's actually on; a native notification
+      // is shown there. We record the path so the UI can offer "Show in folder".
+      const native = typeof window !== "undefined" ? window.rivulet : undefined;
+      if (native?.isDesktop && native.autoSaveFile) {
+        void (async () => {
+          try {
+            const bytes = new Uint8Array(await file.blob.arrayBuffer());
+            const res = await native.autoSaveFile!({ name: file.name, bytes, fromContact: true });
+            if (res.saved && res.path) upsertTransfer(file.id, { id: file.id, savedPath: res.path });
+          } catch {
+            /* fall back to the in-app Save button */
+          }
+        })();
+      }
       completeRef.current?.({
         id: file.id,
         name: file.name,

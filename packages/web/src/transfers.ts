@@ -8,6 +8,7 @@ export interface Transfer {
   transferred: number;
   url?: string; // object URL, set on received files once complete
   mimeType?: string; // set on received files, for preview
+  savedPath?: string; // set when the desktop shell auto-saved it to disk
 }
 
 // A folder transfer shows as a single collapsed row (X of Y files) rather than

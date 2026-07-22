@@ -74,10 +74,20 @@ export function GlobalTransfers() {
                     </span>
                     <span className="file-sub">{formatBytes(t.size)}</span>
                   </span>
-                  {t.url && (
-                    <a className="btn btn-primary btn-sm" href={t.url} download={t.name}>
-                      <ReceiveIcon size={14} /> Save
-                    </a>
+                  {t.savedPath ? (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => void window.rivulet?.showInFolder?.(t.savedPath!)}
+                      title={t.savedPath}
+                    >
+                      <ReceiveIcon size={14} /> Show in folder
+                    </button>
+                  ) : (
+                    t.url && (
+                      <a className="btn btn-primary btn-sm" href={t.url} download={t.name}>
+                        <ReceiveIcon size={14} /> Save
+                      </a>
+                    )
                   )}
                 </li>
               ))}

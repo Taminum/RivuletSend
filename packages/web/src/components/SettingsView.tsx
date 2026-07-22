@@ -2,6 +2,7 @@ import { useAuth } from "../auth/AuthContext";
 import { AuthScreen } from "./AuthScreen";
 import { AccountPanel } from "./AccountPanel";
 import { AccentPicker } from "./AccentPicker";
+import { AutoSaveSettings } from "./AutoSaveSettings";
 
 export function SettingsView() {
   const { user, logout } = useAuth();
@@ -9,6 +10,7 @@ export function SettingsView() {
   return (
     <div className="view">
       <AccentPicker />
+      <AutoSaveSettings />
       {user ? (
         <>
           <AccountPanel />

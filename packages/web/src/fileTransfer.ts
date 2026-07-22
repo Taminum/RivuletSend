@@ -61,10 +61,24 @@ export interface IncomingFolder {
 }
 
 // Native API exposed by the Electron shell (preload.js), when running desktop.
+export interface AutoSaveConfig {
+  enabled: boolean;
+  dir: string;
+}
 interface RivuletNative {
   isDesktop: boolean;
   pickSaveDir: () => Promise<string | null>;
   writeFolderFile: (arg: { destRoot: string; relativePath: string; bytes: Uint8Array }) => Promise<boolean>;
+  // Auto-save (desktop-local config)
+  autoSaveGet?: () => Promise<AutoSaveConfig>;
+  autoSaveSet?: (patch: Partial<AutoSaveConfig>) => Promise<AutoSaveConfig>;
+  autoSavePickDir?: () => Promise<AutoSaveConfig>;
+  autoSaveFile?: (arg: {
+    name: string;
+    bytes: Uint8Array;
+    fromContact: boolean;
+  }) => Promise<{ saved: boolean; path?: string }>;
+  showInFolder?: (fullPath: string) => Promise<void>;
 }
 declare global {
   interface Window {
