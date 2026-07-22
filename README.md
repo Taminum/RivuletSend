@@ -1,8 +1,19 @@
-# P2P Transfer
+# RivuletSend
 
 Send files directly between two browsers over an encrypted WebRTC data channel.
 Files never touch a server in direct P2P mode — the signaling server only helps
 the two peers find each other, then gets out of the way.
+
+Two ways to send:
+
+- **One-time code** — no account needed. Share an 8-character code (or a QR) and
+  the transfer runs browser-to-browser.
+- **To a contact** — sign in, add contacts, and send with no code at all. Contact
+  rows show live per-contact online status, and you can select several contacts
+  and send the same files to all of them.
+
+Folders transfer as a whole tree, incoming files raise a notification you can
+preview in place, and there's an Electron desktop shell for native folder saves.
 
 ## How it works
 
@@ -26,12 +37,11 @@ Browser A  ──create room──▶  Signaling server  ◀──join code─�
 ```
 packages/
   shared      protocol types, room-code + chunk constants — pure TS, no DOM/Node
-  signaling   Node + ws server: room codes, SDP/ICE relay only (no database)
-  web         React + Vite app — the Phase 1 deliverable
+  signaling   Node + ws server: room codes, SDP/ICE relay, contact presence
+  api         Fastify + Prisma + Postgres: accounts, contacts, transfer history
+  web         React + Vite app
+  desktop     Electron shell around the web app (native folder saves)
 ```
-
-Later phases (accounts, Telegram relay, desktop/Electron, Android) are planned in
-`p2p-transfer-plan.md` and will land as additional packages.
 
 ## Local development
 
