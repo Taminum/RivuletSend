@@ -73,7 +73,10 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
                 <li key={c.user.id} className="file-row hoverable">
                   <Avatar id={c.user.id} name={c.user.displayName} online={contactOnline} />
                   <span className="file-meta">
-                    <span className="file-name">{c.user.displayName}</span>
+                    {/* Email lives in the tooltip — the row line shows presence. */}
+                    <span className="file-name" title={c.user.email ?? undefined}>
+                      {c.user.displayName}
+                    </span>
                     <span className={`file-sub ${contactOnline ? "online-tag" : ""}`}>
                       {contactOnline ? "Online" : "Offline"}
                     </span>

@@ -72,8 +72,10 @@ async function main() {
     await bobPage.locator(".nav-item", { hasText: "Send" }).click();
 
     // Alice sends the file to Bob via his contact row's Send button.
+    // Rows are identified by display name — the email now lives in a tooltip.
     const sendBtn = alicePage
-      .locator(".file-row", { hasText: "bob2@example.com" })
+      .locator(".file-row")
+      .filter({ has: alicePage.locator(".file-name", { hasText: /^Bob$/ }) })
       .getByRole("button", { name: "Send" });
     const [chooser] = await Promise.all([
       alicePage.waitForEvent("filechooser"),

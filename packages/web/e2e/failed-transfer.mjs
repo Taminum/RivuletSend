@@ -52,8 +52,10 @@ async function main() {
     await alicePage.locator(".header-status .pulse-line").first().waitFor({ timeout: 20000 });
     await bobPage.locator(".header-status .pulse-line").first().waitFor({ timeout: 20000 });
 
+    // Rows are identified by display name — the email now lives in a tooltip.
     const sendBtn = alicePage
-      .locator(".file-row", { hasText: "bob2@example.com" })
+      .locator(".file-row")
+      .filter({ has: alicePage.locator(".file-name", { hasText: /^Bob$/ }) })
       .getByRole("button", { name: "Send" });
     const [chooser] = await Promise.all([alicePage.waitForEvent("filechooser"), sendBtn.click()]);
     await chooser.setFiles(filePath);

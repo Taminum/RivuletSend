@@ -24,8 +24,14 @@ function ContactRow({
     <li className="file-row hoverable">
       <Avatar id={user.id} name={user.displayName} online={online} />
       <span className="file-meta">
-        <span className="file-name">{user.displayName}</span>
-        {user.email && <span className="file-sub">{user.email}</span>}
+        {/* Email lives in the tooltip; accepted rows show presence instead.
+            Pending rows have no presence, so they show nothing here. */}
+        <span className="file-name" title={user.email ?? undefined}>
+          {user.displayName}
+        </span>
+        {online !== undefined && (
+          <span className={`file-sub ${online ? "online-tag" : ""}`}>{online ? "Online" : "Offline"}</span>
+        )}
       </span>
       {action && <span className="row-actions">{action}</span>}
     </li>

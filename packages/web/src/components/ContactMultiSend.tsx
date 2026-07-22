@@ -71,7 +71,9 @@ export function ContactMultiSend({ files }: { files: File[] }) {
               </span>
               <Avatar id={c.user.id} name={c.user.displayName} online={contactOnline} />
               <span className="file-meta">
-                <span className="file-name">{c.user.displayName}</span>
+                <span className="file-name" title={c.user.email ?? undefined}>
+                  {c.user.displayName}
+                </span>
                 <span className={`file-sub ${contactOnline ? "online-tag" : ""}`}>
                   {contactOnline ? "Online" : "Offline"}
                 </span>
