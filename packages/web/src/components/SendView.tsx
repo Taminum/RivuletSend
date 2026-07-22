@@ -6,6 +6,7 @@ import { formatBytes } from "../format";
 import { selectionFromDrop, selectionFromInputFiles, type FolderSelection } from "../folderSelect";
 import { QrCode } from "./QrCode";
 import { ContactSendList } from "./ContactSendList";
+import { ContactMultiSend } from "./ContactMultiSend";
 import { FolderRow } from "./FolderRow";
 import { PulseLine } from "./PulseLine";
 import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon } from "../icons";
@@ -171,6 +172,8 @@ export function SendView({
             })}
           </ul>
         </div>
+
+        {user && !isFolder && files.length > 0 && <ContactMultiSend files={files} />}
 
         {error && <p className="error">{error}</p>}
         <button className="btn btn-ghost" onClick={newTransfer}>
