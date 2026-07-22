@@ -5,6 +5,16 @@ import type { WebSocket } from "ws";
 // for an MVP; move to a shared store if signaling is ever scaled out.
 const onlineByUser = new Map<string, WebSocket>();
 const userBySocket = new Map<WebSocket, string>();
+// Mutual-contact ids per online user, so we know whom to notify on connect/close.
+const contactsByUser = new Map<string, string[]>();
+
+export function setContacts(userId: string, contactIds: string[]): void {
+  contactsByUser.set(userId, contactIds);
+}
+
+export function getContacts(userId: string): string[] {
+  return contactsByUser.get(userId) ?? [];
+}
 
 export function registerPresence(userId: string, socket: WebSocket): void {
   // One live socket per user: replace (and close) an older one.
@@ -24,7 +34,10 @@ export function registerPresence(userId: string, socket: WebSocket): void {
 export function unregisterPresence(socket: WebSocket): void {
   const userId = userBySocket.get(socket);
   if (userId === undefined) return;
-  if (onlineByUser.get(userId) === socket) onlineByUser.delete(userId);
+  if (onlineByUser.get(userId) === socket) {
+    onlineByUser.delete(userId);
+    contactsByUser.delete(userId);
+  }
   userBySocket.delete(socket);
 }
 

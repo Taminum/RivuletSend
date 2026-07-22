@@ -1,23 +1,30 @@
 :root {
-  /* --- RivuletSend design tokens (Direction B: precision signal) --- */
-  --rs-bg: #0a0d0c;
-  --rs-surface: #0d1110;
-  --rs-surface-2: #131917;
-  --rs-surface-3: #1a2220;
-  --rs-border: #1c2422;
-  --rs-border-strong: #2a3432;
-  --rs-text: #dff5ec;
-  --rs-text-muted: #5c7871;
-  --rs-text-faint: #3d514c;
-  --rs-accent: #2ee6a8; /* signal green — overridden at runtime by the accent picker */
-  --rs-accent-dim: #163d30;
-  --rs-radius: 2px; /* deliberately sharp */
-  --rs-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", Consolas, monospace;
-  --rs-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* --- RivuletSend design tokens (modern clean: rounded, purple) --- */
+  --rs-bg: #121214;
+  --rs-surface: #1c1c20;
+  --rs-surface-2: #17171a;
+  --rs-border: #232328;
+  --rs-text: #f2f2f4;
+  --rs-text-muted: #8b8b95;
+  --rs-accent: #7c6df2; /* overridden at runtime by the accent picker */
+  --rs-accent-soft: #a599f7; /* light accent for the transfer code — overridden at runtime */
+  --rs-accent-dim: #201d33; /* dim accent surface (hover/code card) — overridden at runtime */
+  --rs-online: #3ed598;
+  --rs-danger: #e26a5c;
+  --rs-radius-lg: 20px;
+  --rs-radius-md: 14px;
+  --rs-radius-sm: 10px;
+  --rs-font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  --rs-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  /* Supporting shades derived from the palette above. */
+  --rs-surface-3: #26262c;
+  --rs-border-strong: #30303a;
+  --rs-text-faint: #5c5c66;
 
   /* Aliases so existing component rules adopt the new system automatically. */
   --bg: var(--rs-bg);
-  --sidebar: #070a09;
+  --sidebar: #0e0e11;
   --surface: var(--rs-surface);
   --surface-2: var(--rs-surface-2);
   --surface-3: var(--rs-surface-3);
@@ -28,12 +35,13 @@
   --text-faint: var(--rs-text-faint);
   --accent: var(--rs-accent);
   --accent-strong: color-mix(in srgb, var(--rs-accent), #000 12%);
-  --accent-soft: var(--rs-accent-dim);
-  --green: var(--rs-accent); /* success reads as the accent */
-  --red: #ff5c6a; /* failure stays red regardless of accent choice */
-  --radius: var(--rs-radius);
-  --radius-lg: var(--rs-radius);
-  --font: var(--rs-sans);
+  --accent-soft: var(--rs-accent-dim); /* used as a dim background behind accent content */
+  --green: var(--rs-online); /* success */
+  --red: var(--rs-danger); /* failure */
+  --radius: var(--rs-radius-md);
+  --radius-lg: var(--rs-radius-lg);
+  --radius-sm: var(--rs-radius-sm);
+  --font: var(--rs-font);
   --mono: var(--rs-mono);
 }
 
@@ -108,9 +116,7 @@ a {
 }
 
 .brand-name {
-  font-family: var(--rs-mono);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 700;
   font-size: 16px;
   letter-spacing: -0.01em;
   flex: 1;
@@ -240,7 +246,7 @@ a {
 
 /* ---------- Dropzone ---------- */
 .dropzone {
-  border: 1.5px dashed var(--border-light);
+  border: 2px dashed var(--rs-border);
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.012);
   padding: 52px 24px;
@@ -261,18 +267,18 @@ a {
 .dz-icon {
   width: 52px;
   height: 52px;
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  border-radius: var(--rs-radius-md);
+  background: var(--surface-3);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-dim);
+  color: var(--rs-accent);
   margin-bottom: 16px;
 }
 
 .dz-title {
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
   margin-bottom: 4px;
 }
 
@@ -307,11 +313,11 @@ a {
 }
 
 .section-label {
-  font-family: var(--rs-mono);
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text-faint);
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
   margin-bottom: 8px;
 }
 
@@ -346,12 +352,20 @@ a {
 
 .btn-primary {
   background: var(--accent);
-  color: var(--rs-bg);
+  color: #fff;
   font-weight: 600;
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-strong);
+}
+
+/* Unavailable primary (e.g. Send next to an offline contact): keep the shape so
+   the layout doesn't shift, but read as inert rather than a dimmed accent. */
+.btn-primary:disabled {
+  background: var(--surface-2);
+  color: var(--text-dim);
+  opacity: 1;
 }
 
 .btn-ghost {
@@ -454,7 +468,7 @@ textarea.input {
   font-size: 30px;
   font-weight: 600;
   letter-spacing: 0.16em;
-  color: var(--accent);
+  color: var(--rs-accent-soft);
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -487,9 +501,7 @@ textarea.input {
   justify-content: center;
   gap: 8px;
   color: var(--text-dim);
-  font-family: var(--rs-mono);
-  font-size: 12px;
-  letter-spacing: 0.02em;
+  font-size: 13px;
 }
 
 .pulse-line {
@@ -506,7 +518,6 @@ textarea.input {
 }
 .pulse-dash {
   color: var(--rs-text-muted);
-  font-family: var(--rs-mono);
   flex-shrink: 0;
 }
 
@@ -581,10 +592,12 @@ textarea.input {
 }
 
 .file-sub {
-  font-family: var(--rs-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+}
+.file-sub.online-tag {
+  color: var(--rs-online);
 }
 
 .file-action {
@@ -597,9 +610,9 @@ textarea.input {
 }
 
 .progress-track {
-  height: 5px;
+  height: 6px;
   background: var(--bg);
-  border-radius: var(--radius);
+  border-radius: 999px;
   overflow: hidden;
   margin-top: 8px;
 }
@@ -607,7 +620,7 @@ textarea.input {
 .progress-fill {
   height: 100%;
   background: var(--accent);
-  border-radius: var(--radius);
+  border-radius: 999px;
   transition: width 0.1s linear;
 }
 
@@ -617,25 +630,66 @@ textarea.input {
 
 /* ---------- Contacts ---------- */
 .avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius);
-  background: var(--rs-accent-dim);
-  border: 1px solid var(--rs-border-strong);
-  color: var(--rs-accent);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--rs-accent); /* overridden inline per contact (colorForId) */
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--rs-mono);
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   flex-shrink: 0;
+  position: relative;
+}
+
+/* Online-status dot overlapping the avatar's bottom-right edge. */
+.avatar-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+.avatar-dot.on {
+  background: var(--rs-online);
+}
+.avatar-dot.off {
+  background: var(--rs-text-faint);
 }
 
 .row-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Multi-select checkbox for the "send to contacts" list */
+.ms-check {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: var(--rs-radius-sm);
+  border: 1.5px solid var(--rs-border-strong);
+  background: var(--surface-2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, border-color 0.12s;
+}
+.ms-check.on {
+  background: var(--rs-accent);
+  border-color: var(--rs-accent);
+}
+.ms-check.disabled {
+  opacity: 0.4;
+}
+.file-row.row-offline {
+  opacity: 0.55;
 }
 
 .pending-tag {
@@ -693,10 +747,8 @@ textarea.input {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--rs-mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-dim);
 }
 
@@ -774,6 +826,10 @@ textarea.input {
   flex-direction: column;
   overflow: hidden;
   border-color: var(--rs-border-strong);
+}
+
+.received-modal {
+  max-width: 400px;
 }
 
 .modal-head {
@@ -865,9 +921,9 @@ a.btn-ghost.btn-sm {
 
 /* Prominent one-time code */
 .share-code-box {
-  background: var(--accent-soft);
+  background: var(--rs-accent-dim);
   border: 1px solid var(--rs-accent);
-  border-radius: var(--radius);
+  border-radius: var(--rs-radius-lg);
   padding: 22px 20px;
   text-align: center;
 }
@@ -898,15 +954,15 @@ a.btn-ghost.btn-sm {
   gap: 10px;
 }
 .swatch {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   background: var(--sw);
-  border: 1px solid var(--rs-border-strong);
+  border: none;
   cursor: pointer;
   transition: outline-color 0.1s;
   outline: 2px solid transparent;
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 .swatch.active {
   outline-color: var(--rs-text);
@@ -916,6 +972,22 @@ a.btn-ghost.btn-sm {
   color: var(--rs-accent);
   display: flex;
   flex-shrink: 0;
+}
+
+/* History row status as colored text (no separate icon system). */
+.hist-status {
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.hist-status.ok {
+  color: var(--rs-online);
+}
+.hist-status.failed {
+  color: var(--rs-danger);
+}
+.hist-status.progress {
+  color: var(--rs-accent-soft);
 }
 
 .progress-fill.failed {

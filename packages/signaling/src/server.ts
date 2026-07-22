@@ -17,6 +17,8 @@ import {
   unregisterPresence,
   getPresenceSocket,
   getPresenceUser,
+  setContacts,
+  getContacts,
 } from "./presence.js";
 
 const wss = new WebSocketServer({ port: env.PORT });
@@ -48,6 +50,27 @@ async function areMutualContacts(userA: string, userB: string): Promise<boolean>
     return body.mutual === true;
   } catch {
     return false;
+  }
+}
+
+// The user's mutual-contact ids, so we know whose presence to track/notify.
+async function fetchContactIds(userId: string): Promise<string[]> {
+  try {
+    const url = `${env.API_INTERNAL_URL}/internal/contacts/list?userId=${encodeURIComponent(userId)}`;
+    const res = await fetch(url, { headers: { "x-internal-secret": env.INTERNAL_SECRET } });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { contactIds?: string[] };
+    return body.contactIds ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Tell a user's currently-online contacts that their presence changed.
+function notifyContacts(userId: string, online: boolean): void {
+  for (const contactId of getContacts(userId)) {
+    const contactSocket = getPresenceSocket(contactId);
+    if (contactSocket) send(contactSocket, { type: "presence-update", userId, online });
   }
 }
 
@@ -100,13 +123,26 @@ wss.on("connection", (socket, req) => {
 
       // --- Authenticated, contact-based flow ---
       case "auth": {
+        let userId: string;
         try {
           const decoded = jwt.verify(message.token, env.JWT_SECRET) as { sub: string };
-          registerPresence(decoded.sub, socket);
-          send(socket, { type: "authed", userId: decoded.sub });
+          userId = decoded.sub;
         } catch {
           send(socket, { type: "error", message: "Invalid token" });
+          break;
         }
+        registerPresence(userId, socket);
+        send(socket, { type: "authed", userId });
+
+        // Load this user's contacts, tell them who's already online, and let any
+        // online contacts know this user just came online.
+        const contactIds = await fetchContactIds(userId);
+        // The socket may have closed while we were awaiting the API.
+        if (getPresenceSocket(userId) !== socket) break;
+        setContacts(userId, contactIds);
+        const onlineContacts = contactIds.filter((id) => getPresenceSocket(id));
+        send(socket, { type: "presence-snapshot", online: onlineContacts });
+        notifyContacts(userId, true);
         break;
       }
 
@@ -141,17 +177,19 @@ wss.on("connection", (socket, req) => {
     }
   });
 
-  socket.on("close", () => {
+  const handleDisconnect = () => {
     const peer = getPeer(socket);
     if (peer) send(peer, { type: "peer-left" });
     leaveRoom(socket);
+    // Only announce offline if this socket is still the user's live one (a
+    // replaced socket was already superseded and must not clear the new state).
+    const userId = getPresenceUser(socket);
+    if (userId && getPresenceSocket(userId) === socket) notifyContacts(userId, false);
     unregisterPresence(socket);
-  });
+  };
 
-  socket.on("error", () => {
-    leaveRoom(socket);
-    unregisterPresence(socket);
-  });
+  socket.on("close", handleDisconnect);
+  socket.on("error", handleDisconnect);
 });
 
 console.log(`Signaling server listening on ws://localhost:${env.PORT}`);

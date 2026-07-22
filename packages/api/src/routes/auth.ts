@@ -155,7 +155,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   // --- Accent preference (UI theme), follows the user across devices ---
   app.post("/auth/accent", { preHandler: requireAuth }, async (request, reply) => {
     const body = parseBody(
-      z.object({ accent: z.enum(["green", "cobalt", "amber", "violet"]) }),
+      z.object({ accent: z.enum(["iris", "sky", "mint", "amber", "rose"]) }),
       request,
       reply,
     );

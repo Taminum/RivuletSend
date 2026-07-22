@@ -6,6 +6,7 @@ import { formatBytes } from "../format";
 import { selectionFromDrop, selectionFromInputFiles, type FolderSelection } from "../folderSelect";
 import { QrCode } from "./QrCode";
 import { ContactSendList } from "./ContactSendList";
+import { ContactMultiSend } from "./ContactMultiSend";
 import { FolderRow } from "./FolderRow";
 import { PulseLine } from "./PulseLine";
 import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon } from "../icons";
@@ -172,6 +173,8 @@ export function SendView({
           </ul>
         </div>
 
+        {user && !isFolder && files.length > 0 && <ContactMultiSend files={files} />}
+
         {error && <p className="error">{error}</p>}
         <button className="btn btn-ghost" onClick={newTransfer}>
           New transfer
@@ -234,7 +237,14 @@ export function SendView({
         <div className="dz-title">Drop files or a folder</div>
         <div className="dz-sub">
           or{" "}
-          <a onClick={(e) => e.stopPropagation()}>browse files</a>
+          <a
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+          >
+            browse files
+          </a>
           {" · "}
           <a
             onClick={(e) => {
@@ -245,28 +255,32 @@ export function SendView({
             send a folder
           </a>
         </div>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => {
-            void startWith(Array.from(e.target.files ?? []));
-            e.target.value = "";
-          }}
-        />
-        <input
-          ref={folderInputRef}
-          type="file"
-          hidden
-          {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
-          onChange={(e) => {
-            const chosen = Array.from(e.target.files ?? []);
-            if (chosen.length) void startFolder(selectionFromInputFiles(chosen));
-            e.target.value = "";
-          }}
-        />
       </div>
+
+      {/* Hidden pickers live OUTSIDE the dropzone on purpose: clicking one
+          programmatically dispatches a click that would otherwise bubble into
+          the dropzone's onClick and pop the files dialog on top of this one. */}
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          void startWith(Array.from(e.target.files ?? []));
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        hidden
+        {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+        onChange={(e) => {
+          const chosen = Array.from(e.target.files ?? []);
+          if (chosen.length) void startFolder(selectionFromInputFiles(chosen));
+          e.target.value = "";
+        }}
+      />
 
       <p className="hint-line">
         {user

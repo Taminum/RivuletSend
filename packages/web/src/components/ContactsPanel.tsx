@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ApiError, type ApiUser } from "../api";
 import { useContacts } from "../hooks/useContacts";
 import { usePresence } from "../presence/PresenceContext";
+import { Avatar } from "./Avatar";
 import { SendIcon } from "../icons";
 
 const ADD_ERRORS: Record<string, string> = {
@@ -10,13 +11,27 @@ const ADD_ERRORS: Record<string, string> = {
   cannot_add_self: "That's your own account.",
 };
 
-function ContactRow({ user, action }: { user: ApiUser; action?: React.ReactNode }) {
+function ContactRow({
+  user,
+  action,
+  online,
+}: {
+  user: ApiUser;
+  action?: React.ReactNode;
+  online?: boolean;
+}) {
   return (
     <li className="file-row hoverable">
-      <span className="avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
+      <Avatar id={user.id} name={user.displayName} online={online} />
       <span className="file-meta">
-        <span className="file-name">{user.displayName}</span>
-        {user.email && <span className="file-sub">{user.email}</span>}
+        {/* Email lives in the tooltip; accepted rows show presence instead.
+            Pending rows have no presence, so they show nothing here. */}
+        <span className="file-name" title={user.email ?? undefined}>
+          {user.displayName}
+        </span>
+        {online !== undefined && (
+          <span className={`file-sub ${online ? "online-tag" : ""}`}>{online ? "Online" : "Offline"}</span>
+        )}
       </span>
       {action && <span className="row-actions">{action}</span>}
     </li>
@@ -25,7 +40,7 @@ function ContactRow({ user, action }: { user: ApiUser; action?: React.ReactNode 
 
 export function ContactsPanel() {
   const { data, loadError, add, remove } = useContacts();
-  const { online, sendToContact, callStatus } = usePresence();
+  const { isContactOnline, sendToContact, callStatus } = usePresence();
   const [email, setEmail] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -124,12 +139,13 @@ export function ContactsPanel() {
                 <ContactRow
                   key={c.user.id}
                   user={c.user}
+                  online={isContactOnline(c.user.id)}
                   action={
                     <>
                       <button
                         className="btn btn-primary btn-sm"
-                        disabled={!online || callStatus === "connecting"}
-                        title={online ? "Send a file" : "Connecting…"}
+                        disabled={!isContactOnline(c.user.id) || callStatus === "connecting"}
+                        title={isContactOnline(c.user.id) ? "Send a file" : "Offline — can't send directly"}
                         onClick={() => pickFilesFor(c.user.id)}
                       >
                         <SendIcon size={14} /> Send

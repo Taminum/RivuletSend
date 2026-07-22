@@ -45,6 +45,8 @@ export class PeerConnection {
   onError: (message: string) => void = () => {};
   onAuthed: (userId: string) => void = () => {};
   onCallFailed: (reason: CallFailureReason) => void = () => {};
+  onPresenceSnapshot: (online: string[]) => void = () => {};
+  onPresenceUpdate: (userId: string, online: boolean) => void = () => {};
 
   constructor(private signalingUrl: string = DEFAULT_SIGNALING_URL) {
     this.receiver.onFile = (file) => this.onIncomingFile(file);
@@ -183,6 +185,12 @@ export class PeerConnection {
         break;
       case "call-failed":
         this.onCallFailed(message.reason);
+        break;
+      case "presence-snapshot":
+        this.onPresenceSnapshot(message.online);
+        break;
+      case "presence-update":
+        this.onPresenceUpdate(message.userId, message.online);
         break;
       case "error":
         this.onError(message.message);
