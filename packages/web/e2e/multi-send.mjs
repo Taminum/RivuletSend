@@ -91,6 +91,17 @@ async function main() {
     const hasSave = await popup.locator(`a[download="${FILE_NAME}"]`).count();
     check("pop-up offers a Save action", hasSave > 0);
 
+    // Клик по имени файла в pop-up открывает предпросмотр поверх него.
+    await popup.locator(".file-name button").first().click();
+    const previewOpened = await bobPage
+      .locator(".preview-none, .preview-image, .preview-text, .preview-pdf")
+      .first()
+      .waitFor({ state: "visible", timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    check("clicking the file name opens the preview", previewOpened);
+    await bobPage.keyboard.press("Escape");
+
     const integrity = await bobPage.evaluate(
       async ({ name, size }) => {
         const a = [...document.querySelectorAll("a[download]")].find(

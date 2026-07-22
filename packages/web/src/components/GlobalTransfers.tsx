@@ -61,7 +61,17 @@ export function GlobalTransfers() {
                 <li key={t.id} className="file-row">
                   <FileIcon size={18} className="file-icon" />
                   <span className="file-meta">
-                    <span className="file-name">{t.name || "file"}</span>
+                    <span className="file-name">
+                      {/* Клик по имени открывает предпросмотр поверх pop-up —
+                          сам pop-up содержимое по-прежнему не показывает. */}
+                      {t.url ? (
+                        <button className="linklike" onClick={() => setPreview(t)} title="Предпросмотр">
+                          {t.name || "file"}
+                        </button>
+                      ) : (
+                        t.name || "file"
+                      )}
+                    </span>
                     <span className="file-sub">{formatBytes(t.size)}</span>
                   </span>
                   {t.url && (
