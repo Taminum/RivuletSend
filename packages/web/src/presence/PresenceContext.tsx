@@ -25,6 +25,9 @@ interface PresenceValue {
   callError: string | null;
   activePeerId: string | null;
   transfers: Transfer[];
+  // Ids of contacts currently online (per-contact presence from signaling).
+  onlineContacts: Set<string>;
+  isContactOnline: (userId: string) => boolean;
   sendToContact: (userId: string, files: File[]) => void;
   // Send the same files to several contacts, one after another (the presence
   // peer hosts a single call at a time). `contactSendState` tracks each one.
@@ -73,6 +76,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
   const [activePeerId, setActivePeerId] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [contactSendState, setContactSendState] = useState<Record<string, ContactSendPhase>>({});
+  const [onlineContacts, setOnlineContacts] = useState<Set<string>>(new Set());
 
   const upsertTransfer = useCallback((id: string, update: Partial<Transfer> & Pick<Transfer, "id">) => {
     setTransfers((prev) => {
@@ -87,6 +91,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       peerRef.current?.close();
       peerRef.current = null;
       setOnline(false);
+      setOnlineContacts(new Set());
       return;
     }
 
@@ -96,6 +101,18 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
 
     peer.onAuthed = () => {
       if (!cancelled) setOnline(true);
+    };
+    peer.onPresenceSnapshot = (ids) => {
+      if (!cancelled) setOnlineContacts(new Set(ids));
+    };
+    peer.onPresenceUpdate = (userId, isOnline) => {
+      if (cancelled) return;
+      setOnlineContacts((prev) => {
+        const next = new Set(prev);
+        if (isOnline) next.add(userId);
+        else next.delete(userId);
+        return next;
+      });
     };
     peer.onConnected = () => {
       setCallStatus("connected");
@@ -230,6 +247,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       peer.close();
       peerRef.current = null;
       setOnline(false);
+      setOnlineContacts(new Set());
       setCallStatus("idle");
       setActivePeerId(null);
     };
@@ -290,6 +308,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
   );
 
   const clearCallError = useCallback(() => setCallError(null), []);
+  const isContactOnline = useCallback((userId: string) => onlineContacts.has(userId), [onlineContacts]);
 
   return (
     <PresenceContext.Provider
@@ -299,6 +318,8 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         callError,
         activePeerId,
         transfers,
+        onlineContacts,
+        isContactOnline,
         sendToContact,
         sendToContacts,
         contactSendState,

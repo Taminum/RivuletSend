@@ -64,7 +64,10 @@ async function main() {
     // The multi-select "send to contacts" list is present; pick Bob and send.
     const multi = alicePage.locator(".card", { hasText: "Send to contacts" });
     await multi.waitFor({ timeout: 10000 });
-    await multi.locator(".file-row", { hasText: "bob2@example.com" }).click();
+    const bobRow = multi
+      .locator(".file-row")
+      .filter({ has: alicePage.locator(".file-name", { hasText: /^Bob$/ }) });
+    await bobRow.click();
     await multi.getByRole("button", { name: /Send to \d+ contact/ }).click();
     log("selected Bob and clicked send; waiting for Bob to receive…");
 
@@ -106,8 +109,7 @@ async function main() {
     check(`Bob's copy is byte-for-byte correct (${SIZE} bytes)`, integrity === "OK", integrity);
 
     // Alice's contact row should read "Sent".
-    const sent = await multi
-      .locator(".file-row", { hasText: "bob2@example.com" })
+    const sent = await bobRow
       .locator(".hist-status.ok", { hasText: "Sent" })
       .waitFor({ timeout: 10000 })
       .then(() => true)

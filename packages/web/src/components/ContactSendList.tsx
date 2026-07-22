@@ -10,7 +10,7 @@ import { SendIcon } from "../icons";
 // view and available anywhere a "send to contact" shortcut is useful.
 export function ContactSendList({ onManageContacts }: { onManageContacts?: () => void }) {
   const { data } = useContacts();
-  const { online, sendToContact, callStatus } = usePresence();
+  const { online, isContactOnline, sendToContact, callStatus } = usePresence();
   const [query, setQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const targetRef = useRef<string | null>(null);
@@ -42,7 +42,7 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
         <span>Send to a contact</span>
         <span className="header-status">
           <PulseLine active={online} />
-          {online ? "Online" : "Offline"}
+          {online ? "You're online" : "You're offline"}
         </span>
       </div>
 
@@ -67,23 +67,28 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
             />
           )}
           <ul className="file-list">
-            {filtered.map((c) => (
-              <li key={c.user.id} className="file-row hoverable">
-                <Avatar id={c.user.id} name={c.user.displayName} />
-                <span className="file-meta">
-                  <span className="file-name">{c.user.displayName}</span>
-                  {c.user.email && <span className="file-sub">{c.user.email}</span>}
-                </span>
-                <button
-                  className="btn btn-primary btn-sm"
-                  disabled={!online || callStatus === "connecting"}
-                  title={online ? "Send a file — no code needed" : "Connecting…"}
-                  onClick={() => pickFilesFor(c.user.id)}
-                >
-                  <SendIcon size={14} /> Send
-                </button>
-              </li>
-            ))}
+            {filtered.map((c) => {
+              const contactOnline = isContactOnline(c.user.id);
+              return (
+                <li key={c.user.id} className="file-row hoverable">
+                  <Avatar id={c.user.id} name={c.user.displayName} online={contactOnline} />
+                  <span className="file-meta">
+                    <span className="file-name">{c.user.displayName}</span>
+                    <span className={`file-sub ${contactOnline ? "online-tag" : ""}`}>
+                      {contactOnline ? "Online" : "Offline"}
+                    </span>
+                  </span>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={!contactOnline || callStatus === "connecting"}
+                    title={contactOnline ? "Send a file — no code needed" : "Offline — can't send directly"}
+                    onClick={() => pickFilesFor(c.user.id)}
+                  >
+                    <SendIcon size={14} /> Send
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}

@@ -27,5 +27,9 @@ export type ServerToClientMessage =
   | { type: "error"; message: string }
   // Presence ack after a successful `auth`.
   | { type: "authed"; userId: string }
+  // Initial roster of which of the just-authed user's contacts are online.
+  | { type: "presence-snapshot"; online: string[] }
+  // A contact came online or went offline while this user is connected.
+  | { type: "presence-update"; userId: string; online: boolean }
   // A `call` could not be set up.
   | { type: "call-failed"; reason: CallFailureReason };

@@ -86,8 +86,10 @@ async function main() {
     // Select BOTH Bob and Carol, then send.
     const multi = alicePage.locator(".card", { hasText: "Send to contacts" });
     await multi.waitFor({ timeout: 10000 });
-    await multi.locator(".file-row", { hasText: "bob2@example.com" }).click();
-    await multi.locator(".file-row", { hasText: "carol@example.com" }).click();
+    const rowFor = (name) =>
+      multi.locator(".file-row").filter({ has: alicePage.locator(".file-name", { hasText: new RegExp(`^${name}$`) }) });
+    await rowFor("Bob").click();
+    await rowFor("Carol").click();
     await multi.getByRole("button", { name: /Send to 2 contacts/ }).click();
     log("selected Bob + Carol; waiting for both to receive…");
 
@@ -121,14 +123,13 @@ async function main() {
 
     // Both of Alice's rows must read "Sent" (proves the queue advanced cleanly
     // through the mid-batch teardown rather than stalling on the first).
-    for (const email of ["bob2@example.com", "carol@example.com"]) {
-      const sent = await multi
-        .locator(".file-row", { hasText: email })
+    for (const name of ["Bob", "Carol"]) {
+      const sent = await rowFor(name)
         .locator(".hist-status.ok", { hasText: "Sent" })
         .waitFor({ timeout: 15000 })
         .then(() => true)
         .catch(() => false);
-      check(`Alice's row for ${email} shows "Sent"`, sent);
+      check(`Alice's row for ${name} shows "Sent"`, sent);
     }
 
     try {

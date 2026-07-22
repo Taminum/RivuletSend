@@ -596,6 +596,9 @@ textarea.input {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
+.file-sub.online-tag {
+  color: var(--rs-online);
+}
 
 .file-action {
   flex-shrink: 0;
@@ -681,6 +684,12 @@ textarea.input {
 .ms-check.on {
   background: var(--rs-accent);
   border-color: var(--rs-accent);
+}
+.ms-check.disabled {
+  opacity: 0.4;
+}
+.file-row.row-offline {
+  opacity: 0.55;
 }
 
 .pending-tag {
