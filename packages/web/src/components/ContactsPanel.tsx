@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ApiError, type ApiUser } from "../api";
 import { useContacts } from "../hooks/useContacts";
 import { usePresence } from "../presence/PresenceContext";
+import { Avatar } from "./Avatar";
 import { SendIcon } from "../icons";
 
 const ADD_ERRORS: Record<string, string> = {
@@ -13,7 +14,7 @@ const ADD_ERRORS: Record<string, string> = {
 function ContactRow({ user, action }: { user: ApiUser; action?: React.ReactNode }) {
   return (
     <li className="file-row hoverable">
-      <span className="avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
+      <Avatar id={user.id} name={user.displayName} />
       <span className="file-meta">
         <span className="file-name">{user.displayName}</span>
         {user.email && <span className="file-sub">{user.email}</span>}

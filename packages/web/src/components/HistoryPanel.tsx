@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ApiTransfer } from "../api";
 import { usePresence } from "../presence/PresenceContext";
 import { formatBytes } from "../format";
-import { FileIcon, XIcon, SendIcon, CheckIcon } from "../icons";
+import { Avatar } from "./Avatar";
+import { FileIcon, XIcon, SendIcon } from "../icons";
 
 function relativeTime(iso: string): string {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -70,7 +71,11 @@ export function HistoryPanel({ refreshKey }: { refreshKey: number }) {
           <ul className="file-list">
             {transfers.map((t) => (
               <li key={t.id} className="file-row hoverable">
-                <FileIcon size={18} className="file-icon" />
+                {t.counterpart ? (
+                  <Avatar id={t.counterpart.id} name={t.counterpart.displayName} />
+                ) : (
+                  <FileIcon size={18} className="file-icon" />
+                )}
                 <span className="file-meta">
                   <span className="file-name">
                     {t.direction === "sent" ? "↑ " : "↓ "}
@@ -82,19 +87,13 @@ export function HistoryPanel({ refreshKey }: { refreshKey: number }) {
                       ? ` · ${t.direction === "sent" ? "to" : "from"} ${t.counterpart.displayName}`
                       : ""}
                     {` · ${relativeTime(t.createdAt)}`}
-                    {t.status === "failed" && (
-                      <span className="failed-tag">
-                        {" · failed"}
-                        {t.failureReason ? ` — ${t.failureReason}` : ""}
-                      </span>
+                    {t.status === "failed" && t.failureReason && (
+                      <span className="failed-tag">{` — ${t.failureReason}`}</span>
                     )}
                   </span>
                 </span>
-                {t.status === "completed" && (
-                  <span className="status-check" title="Completed">
-                    <CheckIcon size={14} />
-                  </span>
-                )}
+                {t.status === "completed" && <span className="hist-status ok">Completed</span>}
+                {t.status === "failed" && <span className="hist-status failed">Failed</span>}
                 <span className="row-actions">
                   {t.counterpart && (
                     <button

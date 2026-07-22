@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useContacts } from "../hooks/useContacts";
 import { usePresence } from "../presence/PresenceContext";
 import { PulseLine } from "./PulseLine";
+import { Avatar } from "./Avatar";
 import { SendIcon } from "../icons";
 
 // Compact list of accepted contacts, each with a direct Send button that skips
@@ -68,7 +69,7 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
           <ul className="file-list">
             {filtered.map((c) => (
               <li key={c.user.id} className="file-row hoverable">
-                <span className="avatar">{c.user.displayName.slice(0, 1).toUpperCase()}</span>
+                <Avatar id={c.user.id} name={c.user.displayName} />
                 <span className="file-meta">
                   <span className="file-name">{c.user.displayName}</span>
                   {c.user.email && <span className="file-sub">{c.user.email}</span>}
