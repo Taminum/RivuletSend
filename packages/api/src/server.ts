@@ -23,6 +23,15 @@ async function main(): Promise<void> {
     cookie: { cookieName: AUTH_COOKIE, signed: false },
   });
 
+  // API responses are per-user and some carry short-lived credentials (the
+  // signaling token is valid for 2 minutes). With no explicit directive a
+  // browser may heuristically cache a GET: Firefox did exactly that and kept
+  // replaying a stale /auth/ws-token, which signaling then rejected as
+  // "Invalid token". Never cache API responses.
+  app.addHook("onSend", async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+  });
+
   await registerHealthRoutes(app);
   await registerAuthRoutes(app);
   await registerContactRoutes(app);

@@ -58,6 +58,11 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(API_URL + path, {
     ...options,
     credentials: "include",
+    // Never serve an API response from the HTTP cache: these are per-user and
+    // some are short-lived (the signaling token lasts 2 minutes). Firefox
+    // heuristically cached the GET and replayed a stale token, which signaling
+    // rejected as "Invalid token".
+    cache: "no-store",
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...options.headers,
