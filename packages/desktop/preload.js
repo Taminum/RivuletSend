@@ -14,5 +14,6 @@ contextBridge.exposeInMainWorld("rivulet", {
   autoSaveSet: (patch) => ipcRenderer.invoke("autosave:set", patch),
   autoSavePickDir: () => ipcRenderer.invoke("autosave:pick-dir"),
   autoSaveFile: (arg) => ipcRenderer.invoke("autosave:save-file", arg),
+  autoSaveFolder: (arg) => ipcRenderer.invoke("autosave:save-folder", arg),
   showInFolder: (fullPath) => ipcRenderer.invoke("autosave:show-in-folder", fullPath),
 });

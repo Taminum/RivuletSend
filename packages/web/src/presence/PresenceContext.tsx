@@ -9,9 +9,15 @@ import {
 } from "react";
 import type { CallFailureReason } from "@p2p/shared";
 import { PeerConnection } from "../peer";
+import type { FolderEntry } from "../fileTransfer";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
-import { failureReasonText, type Transfer, type CompletedTransfer } from "../transfers";
+import {
+  failureReasonText,
+  type Transfer,
+  type FolderTransfer,
+  type CompletedTransfer,
+} from "../transfers";
 
 export type CallStatus = "idle" | "connecting" | "connected";
 export type { CompletedTransfer };
@@ -37,6 +43,10 @@ interface PresenceValue {
   onlineDevices: Set<string>;
   isDeviceOnline: (deviceId: string) => boolean;
   sendToDevice: (deviceId: string, files: File[]) => void;
+  // Folder transfers over the presence channel (contact or own device).
+  folders: FolderTransfer[];
+  sendFolderToContact: (userId: string, folderName: string, entries: FolderEntry[]) => void;
+  sendFolderToDevice: (deviceId: string, folderName: string, entries: FolderEntry[]) => void;
   clearCallError: () => void;
 }
 
@@ -60,6 +70,15 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
   const { user } = useAuth();
   const peerRef = useRef<PeerConnection | null>(null);
   const pendingFilesRef = useRef<File[]>([]);
+  // A folder queued to send once the channel opens (mutually exclusive with files).
+  const pendingFolderRef = useRef<{ folderName: string; entries: FolderEntry[] } | null>(null);
+  const activeFolderRef = useRef<{
+    folderId: string;
+    folderName: string;
+    totalFiles: number;
+    totalBytes: number;
+    peerId: string | null;
+  } | null>(null);
   const activePeerRef = useRef<string | null>(null);
   const sentNamesRef = useRef<Map<string, string>>(new Map());
   const activeSendsRef = useRef<Map<string, { name: string; size: number; peerId: string | null }>>(
@@ -89,6 +108,32 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
   const [contactSendState, setContactSendState] = useState<Record<string, ContactSendPhase>>({});
   const [onlineContacts, setOnlineContacts] = useState<Set<string>>(new Set());
   const [onlineDevices, setOnlineDevices] = useState<Set<string>>(new Set());
+  const [folders, setFolders] = useState<FolderTransfer[]>([]);
+
+  const upsertFolder = useCallback(
+    (folderId: string, update: Partial<FolderTransfer> & Pick<FolderTransfer, "folderId">) => {
+      setFolders((prev) => {
+        const existing = prev.find((f) => f.folderId === folderId);
+        if (existing) return prev.map((f) => (f.folderId === folderId ? { ...f, ...update } : f));
+        return [
+          {
+            folderName: "",
+            direction: "send",
+            filesDone: 0,
+            totalFiles: 0,
+            bytesTransferred: 0,
+            totalBytes: 0,
+            done: false,
+            ...update,
+            folderId,
+          },
+          ...prev,
+        ];
+      });
+    },
+    [],
+  );
+  const folderHistoryName = (name: string, count: number) => `${name}/ (${count} files)`;
 
   const upsertTransfer = useCallback((id: string, update: Partial<Transfer> & Pick<Transfer, "id">) => {
     setTransfers((prev) => {
@@ -105,6 +150,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       setOnline(false);
       setOnlineContacts(new Set());
       setOnlineDevices(new Set());
+      setFolders([]);
       return;
     }
 
@@ -141,16 +187,26 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     };
     peer.onConnected = () => {
       setCallStatus("connected");
-      // If we placed this call, flush the queued files now that the channel is
-      // open, then advance the queue to the next contact (if any).
+      // Flush the queued folder or files now that the channel is open, then
+      // advance the queue to the next target (if any).
+      const folder = pendingFolderRef.current;
       const files = pendingFilesRef.current;
+      pendingFolderRef.current = null;
       pendingFilesRef.current = [];
       void (async () => {
-        for (const file of files) {
+        if (folder) {
           try {
-            await peer.sendFile(file);
+            await peer.sendFolder(folder.folderName, folder.entries);
           } catch (err) {
             setCallError(String(err));
+          }
+        } else {
+          for (const file of files) {
+            try {
+              await peer.sendFile(file);
+            } catch (err) {
+              setCallError(String(err));
+            }
           }
         }
         const q = queueRef.current;
@@ -185,12 +241,28 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         });
       }
       activeSendsRef.current.clear();
+      // A folder send in flight failed too — record it.
+      const fm = activeFolderRef.current;
+      if (fm) {
+        activeFolderRef.current = null;
+        upsertFolder(fm.folderId, { folderId: fm.folderId, failed: true, reason: failureReasonText(reason) });
+        completeRef.current?.({
+          id: fm.folderId,
+          name: folderHistoryName(fm.folderName, fm.totalFiles),
+          size: fm.totalBytes,
+          direction: "send",
+          counterpartUserId: fm.peerId,
+          status: "failed",
+          reason: failureReasonText(reason),
+        });
+      }
+      const hadFolder = fm !== null;
       activePeerRef.current = null;
       setActivePeerId(null);
-      // A real mid-send drop of the current queued contact: mark it failed and
+      // A real mid-send drop of the current queued target: mark it failed and
       // move on so the rest of the batch still gets a chance.
       const q = queueRef.current;
-      if (q && hadInFlight) {
+      if (q && (hadInFlight || hadFolder)) {
         const id = q.ids[q.index];
         setContactSendState((p) => ({ ...p, [id]: "failed" }));
         advanceRef.current(false);
@@ -203,6 +275,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       setCallStatus("idle");
       setCallError(CALL_FAILURE_MESSAGES[reason]);
       pendingFilesRef.current = [];
+      pendingFolderRef.current = null;
       const q = queueRef.current;
       if (q) {
         const id = q.ids[q.index];
@@ -271,6 +344,85 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         status: "completed",
       });
     };
+    peer.onFolderStart = (start, direction) => {
+      upsertFolder(start.folderId, {
+        folderId: start.folderId,
+        folderName: start.folderName,
+        direction,
+        totalFiles: start.totalFiles,
+        totalBytes: start.totalBytes,
+        filesDone: 0,
+        bytesTransferred: 0,
+        done: false,
+      });
+      if (direction === "send") {
+        activeFolderRef.current = {
+          folderId: start.folderId,
+          folderName: start.folderName,
+          totalFiles: start.totalFiles,
+          totalBytes: start.totalBytes,
+          peerId: activePeerRef.current,
+        };
+      }
+    };
+    peer.onFolderProgress = (p, direction) => {
+      const done = p.filesDone >= p.totalFiles;
+      upsertFolder(p.folderId, {
+        folderId: p.folderId,
+        filesDone: p.filesDone,
+        bytesTransferred: p.bytesTransferred,
+        totalFiles: p.totalFiles,
+        totalBytes: p.totalBytes,
+        done,
+      });
+      if (direction === "send" && done && activeFolderRef.current?.folderId === p.folderId) {
+        const meta = activeFolderRef.current;
+        activeFolderRef.current = null;
+        completeRef.current?.({
+          id: p.folderId,
+          name: folderHistoryName(meta.folderName, meta.totalFiles),
+          size: p.totalBytes,
+          direction: "send",
+          counterpartUserId: meta.peerId,
+          status: "completed",
+        });
+      }
+    };
+    peer.onIncomingFolder = (folder) => {
+      upsertFolder(folder.folderId, { folderId: folder.folderId, done: true, incoming: folder });
+      completeRef.current?.({
+        id: folder.folderId,
+        name: folderHistoryName(folder.folderName, folder.files.length),
+        size: folder.files.reduce((n, f) => n + f.blob.size, 0),
+        direction: "receive",
+        counterpartUserId: activePeerRef.current,
+        status: "completed",
+      });
+      // Desktop auto-save: write the whole tree to the configured folder.
+      const native = typeof window !== "undefined" ? window.rivulet : undefined;
+      if (native?.isDesktop && native.autoSaveFolder) {
+        void (async () => {
+          try {
+            const files = await Promise.all(
+              folder.files.map(async (f) => ({
+                relativePath: f.relativePath,
+                bytes: new Uint8Array(await f.blob.arrayBuffer()),
+              })),
+            );
+            const res = await native.autoSaveFolder!({
+              folderName: folder.folderName,
+              files,
+              fromContact: true,
+            });
+            if (res.saved && res.path) {
+              upsertFolder(folder.folderId, { folderId: folder.folderId, savedPath: res.path });
+            }
+          } catch {
+            /* fall back to the in-app Save/zip */
+          }
+        })();
+      }
+    };
 
     void (async () => {
       try {
@@ -289,6 +441,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       setOnline(false);
       setOnlineContacts(new Set());
       setOnlineDevices(new Set());
+      setFolders([]);
       setCallStatus("idle");
       setActivePeerId(null);
     };
@@ -361,6 +514,30 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     [online, startCurrent],
   );
 
+  // Folder send over the presence channel (one target at a time). The folder is
+  // flushed from pendingFolderRef once the channel opens.
+  const sendFolder = useCallback(
+    (kind: "contact" | "device", id: string, folderName: string, entries: FolderEntry[]) => {
+      const peer = peerRef.current;
+      if (!peer || !online || entries.length === 0) return;
+      pendingFolderRef.current = { folderName, entries };
+      queueRef.current = { ids: [id], files: [], index: 0, kind };
+      setContactSendState({ [id]: "queued" });
+      startCurrent();
+    },
+    [online, startCurrent],
+  );
+  const sendFolderToContact = useCallback(
+    (userId: string, folderName: string, entries: FolderEntry[]) =>
+      sendFolder("contact", userId, folderName, entries),
+    [sendFolder],
+  );
+  const sendFolderToDevice = useCallback(
+    (deviceId: string, folderName: string, entries: FolderEntry[]) =>
+      sendFolder("device", deviceId, folderName, entries),
+    [sendFolder],
+  );
+
   const clearCallError = useCallback(() => setCallError(null), []);
   const isContactOnline = useCallback((userId: string) => onlineContacts.has(userId), [onlineContacts]);
   const isDeviceOnline = useCallback((deviceId: string) => onlineDevices.has(deviceId), [onlineDevices]);
@@ -381,6 +558,9 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         onlineDevices,
         isDeviceOnline,
         sendToDevice,
+        folders,
+        sendFolderToContact,
+        sendFolderToDevice,
         clearCallError,
       }}
     >

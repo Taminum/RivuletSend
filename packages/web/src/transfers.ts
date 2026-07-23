@@ -25,6 +25,7 @@ export interface FolderTransfer {
   failed?: boolean;
   reason?: string;
   incoming?: IncomingFolder; // received folder, for save/zip
+  savedPath?: string; // set when the desktop shell auto-saved it to disk
 }
 
 // Emitted once when a transfer reaches a terminal state (completed OR failed),

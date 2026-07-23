@@ -3,24 +3,26 @@ import { usePresence } from "../presence/PresenceContext";
 import type { Transfer } from "../transfers";
 import { formatBytes } from "../format";
 import { FilePreview } from "./FilePreview";
+import { FolderRow } from "./FolderRow";
 import { PulseLine } from "./PulseLine";
 import { FileIcon, XIcon, ReceiveIcon } from "../icons";
 
 // Floating panel that surfaces contact (presence) transfers from anywhere in the
 // app, so an incoming file is visible no matter which view you're on.
 export function GlobalTransfers() {
-  const { transfers, callStatus, callError, clearCallError } = usePresence();
+  const { transfers, folders, callStatus, callError, clearCallError } = usePresence();
   const [dismissed, setDismissed] = useState(false);
   const [preview, setPreview] = useState<Transfer | null>(null);
   const [received, setReceived] = useState<Transfer[]>([]);
   const announcedRef = useRef<Set<string>>(new Set());
   const prevCount = useRef(0);
 
-  // A new transfer re-opens the panel even if previously dismissed.
+  // A new transfer (file or folder) re-opens the panel even if dismissed.
   useEffect(() => {
-    if (transfers.length > prevCount.current) setDismissed(false);
-    prevCount.current = transfers.length;
-  }, [transfers.length]);
+    const count = transfers.length + folders.length;
+    if (count > prevCount.current) setDismissed(false);
+    prevCount.current = count;
+  }, [transfers.length, folders.length]);
 
   // Announce each newly-completed incoming file/message with a centered pop-up
   // (in addition to the corner panel), each transfer only once.
@@ -97,7 +99,8 @@ export function GlobalTransfers() {
       </div>
     ) : null;
 
-  const hasContent = transfers.length > 0 || callStatus === "connecting" || !!callError;
+  const hasContent =
+    transfers.length > 0 || folders.length > 0 || callStatus === "connecting" || !!callError;
   if (!hasContent || dismissed) {
     return (
       <>
@@ -130,6 +133,9 @@ export function GlobalTransfers() {
         )}
 
         <ul className="file-list">
+          {folders.map((f) => (
+            <FolderRow key={f.folderId} folder={f} />
+          ))}
           {transfers.map((t) => {
             const pct = t.size ? Math.round((t.transferred / t.size) * 100) : 0;
             const done = pct >= 100;

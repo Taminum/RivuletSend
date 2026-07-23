@@ -69,6 +69,8 @@ interface RivuletNative {
   isDesktop: boolean;
   pickSaveDir: () => Promise<string | null>;
   writeFolderFile: (arg: { destRoot: string; relativePath: string; bytes: Uint8Array }) => Promise<boolean>;
+  pickFolder?: () => Promise<{ folderName: string; entries: FolderEntry[] } | null>;
+  readFile?: (fullPath: string) => Promise<Uint8Array>;
   // Auto-save (desktop-local config)
   autoSaveGet?: () => Promise<AutoSaveConfig>;
   autoSaveSet?: (patch: Partial<AutoSaveConfig>) => Promise<AutoSaveConfig>;
@@ -76,6 +78,11 @@ interface RivuletNative {
   autoSaveFile?: (arg: {
     name: string;
     bytes: Uint8Array;
+    fromContact: boolean;
+  }) => Promise<{ saved: boolean; path?: string }>;
+  autoSaveFolder?: (arg: {
+    folderName: string;
+    files: { relativePath: string; bytes: Uint8Array }[];
     fromContact: boolean;
   }) => Promise<{ saved: boolean; path?: string }>;
   showInFolder?: (fullPath: string) => Promise<void>;

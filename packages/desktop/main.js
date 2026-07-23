@@ -120,6 +120,44 @@ ipcMain.handle("autosave:save-file", async (_event, { name, bytes, fromContact }
   return { saved: true, path: target };
 });
 
+// Never overwrite a folder either: "MyFolder" -> "MyFolder (1)" ...
+function uniqueDir(parent, name) {
+  let candidate = path.join(parent, name);
+  let n = 1;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(parent, `${name} (${n})`);
+    n += 1;
+  }
+  return candidate;
+}
+
+// Auto-save a whole received folder tree, same gating as single files.
+ipcMain.handle("autosave:save-folder", async (_event, { folderName, files, fromContact }) => {
+  const config = readConfig();
+  if (!config.enabled || !fromContact) return { saved: false };
+  await fs.promises.mkdir(config.dir, { recursive: true });
+  const safeName = path.basename(folderName || "folder");
+  const root = uniqueDir(config.dir, safeName);
+
+  for (const f of files) {
+    // relativePath is like "MyFolder/sub/a.txt"; drop the leading folder segment
+    // so files land under our (possibly de-duplicated) root.
+    const parts = String(f.relativePath).split("/").filter(Boolean);
+    const rel = parts[0] === safeName ? parts.slice(1).join("/") : parts.join("/");
+    const target = path.resolve(root, rel);
+    if (!target.startsWith(path.resolve(root))) continue; // guard traversal
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    await fs.promises.writeFile(target, Buffer.from(f.bytes));
+  }
+
+  if (Notification.isSupported()) {
+    const note = new Notification({ title: "Saved folder", body: `${path.basename(root)} (${files.length} files)` });
+    note.on("click", () => shell.showItemInFolder(root));
+    note.show();
+  }
+  return { saved: true, path: root };
+});
+
 ipcMain.handle("autosave:show-in-folder", (_event, fullPath) => {
   if (typeof fullPath === "string" && fullPath) shell.showItemInFolder(fullPath);
 });

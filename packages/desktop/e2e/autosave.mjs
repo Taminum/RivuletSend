@@ -55,6 +55,24 @@ async function main() {
     check("duplicate name de-duplicated", r2.path && r2.path.endsWith("hi (1).txt"), r2.path);
     check("original not overwritten", readFileSync(join(saveDir, "hi.txt"), "utf8") === "first");
 
+    // Folder auto-save: whole tree written under the configured folder.
+    const folderFiles = [
+      { relativePath: "MyFolder/a.txt", bytes: bytesOf("A") },
+      { relativePath: "MyFolder/sub/b.txt", bytes: bytesOf("B") },
+    ];
+    const rf = await win.evaluate(
+      (ff) => window.rivulet.autoSaveFolder({ folderName: "MyFolder", files: ff, fromContact: true }),
+      folderFiles,
+    );
+    check("folder auto-saved", rf.saved === true && existsSync(rf.path), JSON.stringify(rf));
+    check("nested folder file written", rf.path && existsSync(join(rf.path, "sub", "b.txt")));
+    check("folder file content correct", rf.path && readFileSync(join(rf.path, "a.txt"), "utf8") === "A");
+    const rfCode = await win.evaluate(
+      (ff) => window.rivulet.autoSaveFolder({ folderName: "MyFolder", files: ff, fromContact: false }),
+      folderFiles,
+    );
+    check("one-time-code folder NOT auto-saved", rfCode.saved === false);
+
     // One-time-code transfer -> still prompts (not auto-saved).
     const r3 = await save(win, { name: "code.txt", bytes: bytesOf("c"), fromContact: false });
     check("one-time-code transfer NOT auto-saved", r3.saved === false);
