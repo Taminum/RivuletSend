@@ -26,8 +26,52 @@ model User {
   contactsReceived  Contact[]  @relation("ContactTarget")
   sentTransfers     Transfer[] @relation("TransferSender")
   receivedTransfers Transfer[] @relation("TransferRecipient")
+  devices           Device[]
 
   @@map("users")
+}
+
+// A linked device (paired via code/QR instead of a password). Sessions issued to
+// a device carry its id in the JWT so revoking it (setting revokedAt) rejects
+// that device on its very next request, not just at its next login.
+model Device {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  label      String
+  platform   String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("devices")
+}
+
+enum PairingStatus {
+  pending
+  approved
+  expired
+}
+
+// A short-lived, single-use pairing code. Not tied to a user until an already-
+// authenticated device approves it — that's the point: the requesting device
+// doesn't know whose account it will join yet.
+model PairingRequest {
+  id                String        @id @default(cuid())
+  code              String        @unique
+  status            PairingStatus @default(pending)
+  requestedPlatform String?       @map("requested_platform")
+  requestedLabel    String?       @map("requested_label")
+  // Set once approved: the device row created for the requester, so the polling
+  // requester can be handed a session for it exactly once.
+  approvedDeviceId  String?       @map("approved_device_id")
+  claimedAt         DateTime?     @map("claimed_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  expiresAt         DateTime      @map("expires_at")
+
+  @@map("pairing_requests")
 }
 
 // A directed edge owner -> contact. Mutual acceptance is modelled by inserting

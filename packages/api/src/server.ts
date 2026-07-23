@@ -8,6 +8,8 @@ import { registerAuthRoutes } from "./routes/auth";
 import { registerContactRoutes } from "./routes/contacts";
 import { registerInternalRoutes } from "./routes/internal";
 import { registerTransferRoutes } from "./routes/transfers";
+import { registerPairingRoutes } from "./routes/pairing";
+import { registerDeviceRoutes } from "./routes/devices";
 
 const AUTH_COOKIE = "token";
 
@@ -37,6 +39,8 @@ async function main(): Promise<void> {
   await registerContactRoutes(app);
   await registerInternalRoutes(app);
   await registerTransferRoutes(app);
+  await registerPairingRoutes(app);
+  await registerDeviceRoutes(app);
 
   try {
     const address = await app.listen({ port: env.PORT, host: "0.0.0.0" });
