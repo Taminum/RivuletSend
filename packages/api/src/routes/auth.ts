@@ -172,7 +172,12 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   // a different origin, so the client fetches this readable, short-lived token
   // and presents it in the WS `auth` message.
   app.get("/auth/ws-token", { preHandler: requireAuth }, async (request, reply) => {
-    const token = await reply.jwtSign({ sub: request.user.sub }, { expiresIn: "2m" });
+    // Carry the device id (for paired sessions) so signaling can register this
+    // connection as a specific device — that's what makes self-send addressable.
+    const payload = request.user.did
+      ? { sub: request.user.sub, did: request.user.did }
+      : { sub: request.user.sub };
+    const token = await reply.jwtSign(payload, { expiresIn: "2m" });
     return reply.send({ token });
   });
 

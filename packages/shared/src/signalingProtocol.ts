@@ -11,13 +11,17 @@ export type ClientToServerMessage =
   // Authenticate this socket and register presence (user is "online").
   | { type: "auth"; token: string }
   // Start a codeless transfer to an online mutual contact.
-  | { type: "call"; targetUserId: string };
+  | { type: "call"; targetUserId: string }
+  // Start a codeless transfer to one of my own paired devices.
+  | { type: "call-device"; targetDeviceId: string };
 
 export type CallFailureReason =
   | "unauthenticated"
   | "self"
   | "offline"
-  | "not-contact";
+  | "not-contact"
+  // The target device isn't one of the caller's own online paired devices.
+  | "not-your-device";
 
 export type ServerToClientMessage =
   | { type: "created"; code: string }
@@ -31,5 +35,9 @@ export type ServerToClientMessage =
   | { type: "presence-snapshot"; online: string[] }
   // A contact came online or went offline while this user is connected.
   | { type: "presence-update"; userId: string; online: boolean }
+  // Which of my OWN paired devices are currently online (device ids).
+  | { type: "my-devices-snapshot"; online: string[] }
+  // One of my own paired devices connected or disconnected.
+  | { type: "my-device-update"; deviceId: string; online: boolean }
   // A `call` could not be set up.
   | { type: "call-failed"; reason: CallFailureReason };

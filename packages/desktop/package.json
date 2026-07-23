@@ -1,6 +1,6 @@
 {
   "name": "@p2p/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "RivuletSend — peer-to-peer file transfer",
   "author": "RivuletSend",
@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "portable": "electron-builder --win portable"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -20,6 +21,9 @@
     "files": ["main.js", "preload.js"],
     "win": {
       "target": "nsis"
+    },
+    "portable": {
+      "artifactName": "RivuletSend-${version}-portable.exe"
     }
   }
 }

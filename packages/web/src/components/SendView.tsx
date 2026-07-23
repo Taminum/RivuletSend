@@ -7,6 +7,7 @@ import { selectionFromDrop, selectionFromInputFiles, type FolderSelection } from
 import { QrCode } from "./QrCode";
 import { ContactSendList } from "./ContactSendList";
 import { ContactMultiSend } from "./ContactMultiSend";
+import { MyDevicesSend } from "./MyDevicesSend";
 import { FolderRow } from "./FolderRow";
 import { PulseLine } from "./PulseLine";
 import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon } from "../icons";
@@ -287,6 +288,8 @@ export function SendView({
           ? "Drop files or a folder to get a shareable code — or send straight to a contact below."
           : "Drop files or a folder to get a one-time code you can share with anyone."}
       </p>
+
+      {user && <MyDevicesSend />}
 
       {user ? (
         <ContactSendList onManageContacts={() => onNavigate?.("contacts")} />

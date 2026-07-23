@@ -88,6 +88,15 @@ export function PairedDevices() {
           </button>
         )}
       </div>
+      {!linking && (
+        <p className="muted" style={{ marginTop: -6, marginBottom: 14 }}>
+          Link your own devices (e.g. your Windows client) so you can send files
+          straight to them from the Send screen — no code, no confirmation. On the
+          new device, open the sign-in screen and choose{" "}
+          <strong style={{ color: "var(--text)" }}>“Link this device with a code”</strong>; it
+          shows a 6-digit code. Tap “Link a new device” here and enter that code.
+        </p>
+      )}
 
       {linking && (
         <div className="card" style={{ marginBottom: 14, background: "var(--surface-2)" }}>

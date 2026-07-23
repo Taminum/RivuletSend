@@ -33,6 +33,10 @@ interface PresenceValue {
   // peer hosts a single call at a time). `contactSendState` tracks each one.
   sendToContacts: (userIds: string[], files: File[]) => void;
   contactSendState: Record<string, ContactSendPhase>;
+  // Ids of my own paired devices currently online, and a direct self-send.
+  onlineDevices: Set<string>;
+  isDeviceOnline: (deviceId: string) => boolean;
+  sendToDevice: (deviceId: string, files: File[]) => void;
   clearCallError: () => void;
 }
 
@@ -41,6 +45,7 @@ const PresenceContext = createContext<PresenceValue | null>(null);
 const CALL_FAILURE_MESSAGES: Record<CallFailureReason, string> = {
   offline: "They're not online right now.",
   "not-contact": "You need to be accepted contacts to send directly.",
+  "not-your-device": "That device isn't one of yours, or it went offline.",
   self: "That's your own account.",
   unauthenticated: "Session expired — please reload.",
 };
@@ -63,8 +68,14 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
   const completeRef = useRef(onTransferComplete);
   completeRef.current = onTransferComplete;
 
-  // Sequential send queue: the same files are delivered to each contact in turn.
-  const queueRef = useRef<{ ids: string[]; files: File[]; index: number } | null>(null);
+  // Sequential send queue: the same files are delivered to each target in turn.
+  // `kind` selects contact-call vs self-send to my own device.
+  const queueRef = useRef<{
+    ids: string[];
+    files: File[];
+    index: number;
+    kind: "contact" | "device";
+  } | null>(null);
   // Set right before we place the next call, so the resulting teardown of the
   // previous (already-drained) channel isn't mistaken for a real disconnect.
   const transitioningRef = useRef(false);
@@ -77,6 +88,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [contactSendState, setContactSendState] = useState<Record<string, ContactSendPhase>>({});
   const [onlineContacts, setOnlineContacts] = useState<Set<string>>(new Set());
+  const [onlineDevices, setOnlineDevices] = useState<Set<string>>(new Set());
 
   const upsertTransfer = useCallback((id: string, update: Partial<Transfer> & Pick<Transfer, "id">) => {
     setTransfers((prev) => {
@@ -92,6 +104,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       peerRef.current = null;
       setOnline(false);
       setOnlineContacts(new Set());
+      setOnlineDevices(new Set());
       return;
     }
 
@@ -111,6 +124,18 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         const next = new Set(prev);
         if (isOnline) next.add(userId);
         else next.delete(userId);
+        return next;
+      });
+    };
+    peer.onMyDevicesSnapshot = (ids) => {
+      if (!cancelled) setOnlineDevices(new Set(ids));
+    };
+    peer.onMyDeviceUpdate = (deviceId, isOnline) => {
+      if (cancelled) return;
+      setOnlineDevices((prev) => {
+        const next = new Set(prev);
+        if (isOnline) next.add(deviceId);
+        else next.delete(deviceId);
         return next;
       });
     };
@@ -263,6 +288,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       peerRef.current = null;
       setOnline(false);
       setOnlineContacts(new Set());
+      setOnlineDevices(new Set());
       setCallStatus("idle");
       setActivePeerId(null);
     };
@@ -280,7 +306,8 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     activePeerRef.current = id;
     setActivePeerId(id);
     setCallStatus("connecting");
-    peer.callContact(id);
+    if (q.kind === "device") peer.callDevice(id);
+    else peer.callContact(id);
   }, []);
 
   // Move to the next queued contact, or finish. `fromOpenChannel` is true when
@@ -310,7 +337,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     (userIds: string[], files: File[]) => {
       const peer = peerRef.current;
       if (!peer || !online || files.length === 0 || userIds.length === 0) return;
-      queueRef.current = { ids: [...userIds], files, index: 0 };
+      queueRef.current = { ids: [...userIds], files, index: 0, kind: "contact" };
       setContactSendState(Object.fromEntries(userIds.map((id) => [id, "queued" as ContactSendPhase])));
       startCurrent();
     },
@@ -322,8 +349,21 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     [sendToContacts],
   );
 
+  // Self-send: deliver files straight to one of my own online paired devices.
+  const sendToDevice = useCallback(
+    (deviceId: string, files: File[]) => {
+      const peer = peerRef.current;
+      if (!peer || !online || files.length === 0) return;
+      queueRef.current = { ids: [deviceId], files, index: 0, kind: "device" };
+      setContactSendState({ [deviceId]: "queued" });
+      startCurrent();
+    },
+    [online, startCurrent],
+  );
+
   const clearCallError = useCallback(() => setCallError(null), []);
   const isContactOnline = useCallback((userId: string) => onlineContacts.has(userId), [onlineContacts]);
+  const isDeviceOnline = useCallback((deviceId: string) => onlineDevices.has(deviceId), [onlineDevices]);
 
   return (
     <PresenceContext.Provider
@@ -338,6 +378,9 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         sendToContact,
         sendToContacts,
         contactSendState,
+        onlineDevices,
+        isDeviceOnline,
+        sendToDevice,
         clearCallError,
       }}
     >

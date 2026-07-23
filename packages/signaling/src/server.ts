@@ -15,8 +15,14 @@ import { env } from "./env.js";
 import {
   registerPresence,
   unregisterPresence,
-  getPresenceSocket,
   getPresenceUser,
+  getSocketDevice,
+  isUserOnline,
+  getAnyUserSocket,
+  getUserSockets,
+  getDeviceSocket,
+  getDeviceUser,
+  onlineDeviceIds,
   setContacts,
   getContacts,
 } from "./presence.js";
@@ -66,11 +72,20 @@ async function fetchContactIds(userId: string): Promise<string[]> {
   }
 }
 
-// Tell a user's currently-online contacts that their presence changed.
-function notifyContacts(userId: string, online: boolean): void {
-  for (const contactId of getContacts(userId)) {
-    const contactSocket = getPresenceSocket(contactId);
-    if (contactSocket) send(contactSocket, { type: "presence-update", userId, online });
+// Tell a user's online contacts (each on whatever devices they have open) that
+// their presence changed.
+function notifyContacts(contactIds: string[], userId: string, online: boolean): void {
+  for (const contactId of contactIds) {
+    for (const contactSocket of getUserSockets(contactId)) {
+      send(contactSocket, { type: "presence-update", userId, online });
+    }
+  }
+}
+
+// Tell a user's OTHER live sessions that one of their own devices changed state.
+function notifyOwnSessions(userId: string, exclude: WebSocket, deviceId: string, online: boolean): void {
+  for (const s of getUserSockets(userId)) {
+    if (s !== exclude) send(s, { type: "my-device-update", deviceId, online });
   }
 }
 
@@ -124,25 +139,37 @@ wss.on("connection", (socket, req) => {
       // --- Authenticated, contact-based flow ---
       case "auth": {
         let userId: string;
+        let deviceId: string | undefined;
         try {
-          const decoded = jwt.verify(message.token, env.JWT_SECRET) as { sub: string };
+          const decoded = jwt.verify(message.token, env.JWT_SECRET) as { sub: string; did?: string };
           userId = decoded.sub;
+          deviceId = decoded.did;
         } catch {
           send(socket, { type: "error", message: "Invalid token" });
           break;
         }
-        registerPresence(userId, socket);
+        const { wasOffline } = registerPresence(userId, socket, deviceId);
         send(socket, { type: "authed", userId });
 
-        // Load this user's contacts, tell them who's already online, and let any
-        // online contacts know this user just came online.
+        // My own paired devices: tell this session which of them are online, and
+        // tell my other sessions this device just came online.
+        send(socket, {
+          type: "my-devices-snapshot",
+          online: onlineDeviceIds(userId).filter((d) => d !== deviceId),
+        });
+        if (deviceId) notifyOwnSessions(userId, socket, deviceId, true);
+
+        // Load this user's contacts, tell them who's already online, and — only
+        // when this is the user's first session — let online contacts know.
         const contactIds = await fetchContactIds(userId);
         // The socket may have closed while we were awaiting the API.
-        if (getPresenceSocket(userId) !== socket) break;
+        if (getPresenceUser(socket) !== userId) break;
         setContacts(userId, contactIds);
-        const onlineContacts = contactIds.filter((id) => getPresenceSocket(id));
-        send(socket, { type: "presence-snapshot", online: onlineContacts });
-        notifyContacts(userId, true);
+        send(socket, {
+          type: "presence-snapshot",
+          online: contactIds.filter((id) => isUserOnline(id)),
+        });
+        if (wasOffline) notifyContacts(contactIds, userId, true);
         break;
       }
 
@@ -156,7 +183,7 @@ wss.on("connection", (socket, req) => {
           send(socket, { type: "call-failed", reason: "self" });
           break;
         }
-        const targetSocket = getPresenceSocket(message.targetUserId);
+        const targetSocket = getAnyUserSocket(message.targetUserId);
         if (!targetSocket) {
           send(socket, { type: "call-failed", reason: "offline" });
           break;
@@ -172,6 +199,29 @@ wss.on("connection", (socket, req) => {
         break;
       }
 
+      // Self-send: call one of MY OWN online paired devices — no contact check,
+      // no code. Only allowed to devices owned by the caller's account.
+      case "call-device": {
+        const callerId = getPresenceUser(socket);
+        if (!callerId) {
+          send(socket, { type: "call-failed", reason: "unauthenticated" });
+          break;
+        }
+        const targetSocket = getDeviceSocket(message.targetDeviceId);
+        if (!targetSocket || targetSocket === socket) {
+          send(socket, { type: "call-failed", reason: "offline" });
+          break;
+        }
+        if (getDeviceUser(message.targetDeviceId) !== callerId) {
+          send(socket, { type: "call-failed", reason: "not-your-device" });
+          break;
+        }
+        pairSockets(socket, targetSocket);
+        send(socket, { type: "ready", initiator: true });
+        send(targetSocket, { type: "ready", initiator: false });
+        break;
+      }
+
       default:
         send(socket, { type: "error", message: "Unknown message type" });
     }
@@ -181,11 +231,22 @@ wss.on("connection", (socket, req) => {
     const peer = getPeer(socket);
     if (peer) send(peer, { type: "peer-left" });
     leaveRoom(socket);
-    // Only announce offline if this socket is still the user's live one (a
-    // replaced socket was already superseded and must not clear the new state).
+
+    // Capture identity + contacts before unregistering clears them.
     const userId = getPresenceUser(socket);
-    if (userId && getPresenceSocket(userId) === socket) notifyContacts(userId, false);
-    unregisterPresence(socket);
+    const deviceId = getSocketDevice(socket);
+    const contacts = userId ? getContacts(userId) : [];
+    const { nowOffline } = unregisterPresence(socket);
+
+    if (userId) {
+      // Contacts only see me go offline once my LAST session closes.
+      if (nowOffline) notifyContacts(contacts, userId, false);
+      // My other sessions see this device drop — unless it just reconnected
+      // (a replacement socket already took over the device id).
+      if (deviceId && !getDeviceSocket(deviceId)) {
+        notifyOwnSessions(userId, socket, deviceId, false);
+      }
+    }
   };
 
   socket.on("close", handleDisconnect);

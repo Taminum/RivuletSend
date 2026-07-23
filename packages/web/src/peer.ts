@@ -47,6 +47,8 @@ export class PeerConnection {
   onCallFailed: (reason: CallFailureReason) => void = () => {};
   onPresenceSnapshot: (online: string[]) => void = () => {};
   onPresenceUpdate: (userId: string, online: boolean) => void = () => {};
+  onMyDevicesSnapshot: (online: string[]) => void = () => {};
+  onMyDeviceUpdate: (deviceId: string, online: boolean) => void = () => {};
 
   constructor(private signalingUrl: string = DEFAULT_SIGNALING_URL) {
     this.receiver.onFile = (file) => this.onIncomingFile(file);
@@ -126,6 +128,11 @@ export class PeerConnection {
     this.send({ type: "call", targetUserId });
   }
 
+  // Codeless call to one of my own online paired devices (self-send).
+  callDevice(targetDeviceId: string): void {
+    this.send({ type: "call-device", targetDeviceId });
+  }
+
   async sendFile(file: File): Promise<void> {
     if (!this.channel || this.channel.readyState !== "open") {
       throw new Error("No open peer connection to send over");
@@ -191,6 +198,12 @@ export class PeerConnection {
         break;
       case "presence-update":
         this.onPresenceUpdate(message.userId, message.online);
+        break;
+      case "my-devices-snapshot":
+        this.onMyDevicesSnapshot(message.online);
+        break;
+      case "my-device-update":
+        this.onMyDeviceUpdate(message.deviceId, message.online);
         break;
       case "error":
         this.onError(message.message);
