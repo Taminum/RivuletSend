@@ -112,4 +112,37 @@ export const api = {
     failureReason?: string;
   }) => req<{ transfer: ApiTransfer }>("/transfers", { method: "POST", body: JSON.stringify(b) }),
   deleteTransfer: (id: string) => req<{ ok: true }>(`/transfers/${id}`, { method: "DELETE" }),
+
+  // device pairing — requesting side (fresh device)
+  pairingRequest: (b: { platform?: string; label?: string }) =>
+    req<{ code: string; expiresAt: string }>("/pairing/request", {
+      method: "POST",
+      body: JSON.stringify(b),
+    }),
+  pairingStatus: (code: string) =>
+    req<{ status: "pending" | "approved" | "expired"; user?: ApiUser }>(`/pairing/${code}/status`),
+
+  // device pairing — approving side (already signed in)
+  pairingInfo: (code: string) =>
+    req<{ requestedPlatform: string | null; createdAt: string; expiresAt: string }>(
+      `/pairing/${code}/info`,
+    ),
+  pairingApprove: (b: { code: string; label?: string }) =>
+    req<{ ok: true; device: { id: string; label: string } }>("/pairing/approve", {
+      method: "POST",
+      body: JSON.stringify(b),
+    }),
+
+  // linked devices
+  listDevices: () => req<{ devices: ApiDevice[] }>("/devices"),
+  revokeDevice: (id: string) => req<{ ok: true }>(`/devices/${id}/revoke`, { method: "POST" }),
 };
+
+export interface ApiDevice {
+  id: string;
+  label: string;
+  platform: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  isCurrent: boolean;
+}

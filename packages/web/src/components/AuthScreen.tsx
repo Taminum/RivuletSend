@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError, type TelegramAuthData } from "../api";
 import { TelegramLoginButton, telegramConfigured } from "./TelegramLoginButton";
+import { PairDeviceScreen } from "./PairDeviceScreen";
 
 const ERROR_MESSAGES: Record<string, string> = {
   email_taken: "That email is already registered. Try signing in.",
@@ -19,6 +20,7 @@ function friendlyError(err: unknown): string {
 export function AuthScreen({ onCancel }: { onCancel?: () => void }) {
   const { login, signup, loginWithTelegram } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
+  const [pairing, setPairing] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,6 +28,8 @@ export function AuthScreen({ onCancel }: { onCancel?: () => void }) {
   const [busy, setBusy] = useState(false);
 
   const isSignup = mode === "signup";
+
+  if (pairing) return <PairDeviceScreen onCancel={() => setPairing(false)} />;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -122,6 +126,16 @@ export function AuthScreen({ onCancel }: { onCancel?: () => void }) {
         }}
       >
         {isSignup ? "I already have an account" : "Create a new account"}
+      </button>
+      <button
+        className="link-btn"
+        style={{ width: "100%", marginTop: 10 }}
+        onClick={() => {
+          setError(null);
+          setPairing(true);
+        }}
+      >
+        Link this device with a code instead
       </button>
       {onCancel && (
         <button className="link-btn" style={{ width: "100%", marginTop: 10 }} onClick={onCancel}>
