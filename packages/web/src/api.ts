@@ -27,6 +27,13 @@ export type ContactStatus = "accepted" | "outgoing" | "incoming";
 export interface ContactEntry {
   user: ApiUser;
   status: ContactStatus;
+  // My private nickname for them, if I set one.
+  alias?: string | null;
+}
+
+// What to show for a contact: my nickname if set, otherwise their own name.
+export function contactName(entry: ContactEntry): string {
+  return entry.alias?.trim() || entry.user.displayName;
 }
 export interface ContactsResponse {
   accepted: ContactEntry[];
@@ -135,7 +142,19 @@ export const api = {
 
   // linked devices
   listDevices: () => req<{ devices: ApiDevice[] }>("/devices"),
+  renameDevice: (id: string, label: string) =>
+    req<{ ok: true; label: string }>(`/devices/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ label }),
+    }),
   revokeDevice: (id: string) => req<{ ok: true }>(`/devices/${id}/revoke`, { method: "POST" }),
+
+  // private nickname for a contact (only I see it)
+  renameContact: (userId: string, alias: string | null) =>
+    req<{ ok: true; alias: string | null }>(`/contacts/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ alias }),
+    }),
 };
 
 export interface ApiDevice {

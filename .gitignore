@@ -7,3 +7,6 @@ build/
 
 # Claude Code local tooling config
 .claude/
+
+# Local planning notes, not part of the project
+p2p-transfer-plan.md

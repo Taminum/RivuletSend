@@ -81,6 +81,8 @@ model Contact {
   id            String   @id @default(cuid())
   ownerUserId   String   @map("owner_user_id")
   contactUserId String   @map("contact_user_id")
+  // Private nickname the owner gave this contact; only the owner sees it.
+  alias         String?
   createdAt     DateTime @default(now()) @map("created_at")
 
   owner   User @relation("ContactOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)

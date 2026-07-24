@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { contactName } from "../api";
 import { useContacts } from "../hooks/useContacts";
 import { usePresence } from "../presence/PresenceContext";
 import { Avatar } from "./Avatar";
@@ -69,10 +70,10 @@ export function ContactMultiSend({ files }: { files: File[] }) {
               <span className={`ms-check ${checked ? "on" : ""} ${contactOnline ? "" : "disabled"}`} aria-hidden>
                 {checked && contactOnline && <CheckIcon size={12} />}
               </span>
-              <Avatar id={c.user.id} name={c.user.displayName} online={contactOnline} />
+              <Avatar id={c.user.id} name={contactName(c)} online={contactOnline} />
               <span className="file-meta">
                 <span className="file-name" title={c.user.email ?? undefined}>
-                  {c.user.displayName}
+                  {contactName(c)}
                 </span>
                 <span className={`file-sub ${contactOnline ? "online-tag" : ""}`}>
                   {contactOnline ? "Online" : "Offline"}

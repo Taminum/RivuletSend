@@ -6,6 +6,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Notification, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const os = require("node:os");
 
 // Point at the hosted/dev web app for now (fastest). Bundling packages/web's
 // build for offline shell is a later step (needs the API to allow this origin).
@@ -195,6 +196,12 @@ ipcMain.handle("pick-folder", async () => {
 // Read a picked file's bytes (for native sending).
 ipcMain.handle("read-file", async (_event, fullPath) => {
   return fs.promises.readFile(fullPath);
+});
+
+// This machine's name, used as the default label when pairing this device.
+ipcMain.handle("device-name", () => {
+  const host = os.hostname();
+  return { name: host || "Windows PC", platform: process.platform };
 });
 
 // Native notification (used on transfer complete).

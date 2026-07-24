@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ApiError, type ApiUser } from "../api";
+import { api, ApiError, contactName, type ApiUser } from "../api";
 import { useContacts } from "../hooks/useContacts";
 import { usePresence } from "../presence/PresenceContext";
 import { Avatar } from "./Avatar";
@@ -15,19 +15,23 @@ function ContactRow({
   user,
   action,
   online,
+  name,
 }: {
   user: ApiUser;
   action?: React.ReactNode;
   online?: boolean;
+  // Display name — my nickname for them if set, otherwise their own name.
+  name?: string;
 }) {
+  const shown = name || user.displayName;
   return (
     <li className="file-row hoverable">
-      <Avatar id={user.id} name={user.displayName} online={online} />
+      <Avatar id={user.id} name={shown} online={online} />
       <span className="file-meta">
         {/* Email lives in the tooltip; accepted rows show presence instead.
             Pending rows have no presence, so they show nothing here. */}
         <span className="file-name" title={user.email ?? undefined}>
-          {user.displayName}
+          {shown}
         </span>
         {online !== undefined && (
           <span className={`file-sub ${online ? "online-tag" : ""}`}>{online ? "Online" : "Offline"}</span>
@@ -39,7 +43,7 @@ function ContactRow({
 }
 
 export function ContactsPanel() {
-  const { data, loadError, add, remove } = useContacts();
+  const { data, loadError, add, remove, reload } = useContacts();
   const { isContactOnline, sendToContact, callStatus } = usePresence();
   const [email, setEmail] = useState("");
   const [query, setQuery] = useState("");
@@ -66,6 +70,19 @@ export function ContactsPanel() {
     const target = sendTargetRef.current;
     if (target && files.length) sendToContact(target, files);
     e.target.value = "";
+  }
+
+  // Private nickname for a contact — only I see it. Empty input clears it.
+  async function rename(userId: string, current: string) {
+    const next = window.prompt("Contact name (only you see this)", current);
+    if (next === null) return; // cancelled
+    const alias = next.trim();
+    try {
+      await api.renameContact(userId, alias || null);
+      await reload();
+    } catch {
+      setError("Couldn't rename that contact.");
+    }
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -139,6 +156,7 @@ export function ContactsPanel() {
                 <ContactRow
                   key={c.user.id}
                   user={c.user}
+                  name={contactName(c)}
                   online={isContactOnline(c.user.id)}
                   action={
                     <>
@@ -149,6 +167,9 @@ export function ContactsPanel() {
                         onClick={() => pickFilesFor(c.user.id)}
                       >
                         <SendIcon size={14} /> Send
+                      </button>
+                      <button className="link-btn" onClick={() => void rename(c.user.id, contactName(c))}>
+                        Rename
                       </button>
                       <button className="link-btn" onClick={() => void remove(c.user.id)}>
                         Remove

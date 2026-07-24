@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("rivulet", {
   readFile: (fullPath) => ipcRenderer.invoke("read-file", fullPath),
   notify: (arg) => ipcRenderer.invoke("notify", arg),
   // Auto-save (desktop-local config)
+  deviceName: () => ipcRenderer.invoke("device-name"),
   autoSaveGet: () => ipcRenderer.invoke("autosave:get"),
   autoSaveSet: (patch) => ipcRenderer.invoke("autosave:set", patch),
   autoSavePickDir: () => ipcRenderer.invoke("autosave:pick-dir"),

@@ -13,6 +13,42 @@ function detectPlatform(): string {
   return "web";
 }
 
+// Default label for this device: the real machine name on desktop, otherwise a
+// browser/OS guess. The user can rename it later from "Paired devices".
+async function detectDeviceName(): Promise<string> {
+  const native = typeof window !== "undefined" ? window.rivulet : undefined;
+  if (native?.deviceName) {
+    try {
+      const { name } = await native.deviceName();
+      if (name) return name;
+    } catch {
+      /* fall through to the browser guess */
+    }
+  }
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /Firefox\//.test(ua)
+      ? "Firefox"
+      : /Chrome\//.test(ua)
+        ? "Chrome"
+        : /Safari\//.test(ua)
+          ? "Safari"
+          : "Browser";
+  const os = /Windows/.test(ua)
+    ? "Windows"
+    : /Mac OS/.test(ua)
+      ? "macOS"
+      : /Android/.test(ua)
+        ? "Android"
+        : /iPhone|iPad/.test(ua)
+          ? "iOS"
+          : /Linux/.test(ua)
+            ? "Linux"
+            : "";
+  return os ? `${browser} on ${os}` : browser;
+}
+
 export function PairDeviceScreen({ onCancel }: { onCancel?: () => void }) {
   const { setUser } = useAuth();
   const [phase, setPhase] = useState<Phase>("loading");
@@ -24,7 +60,8 @@ export function PairDeviceScreen({ onCancel }: { onCancel?: () => void }) {
     setPhase("loading");
     setCode(null);
     try {
-      const { code } = await api.pairingRequest({ platform: detectPlatform() });
+      const label = await detectDeviceName();
+      const { code } = await api.pairingRequest({ platform: detectPlatform(), label });
       setCode(code);
       setPhase("pending");
     } catch {

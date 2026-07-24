@@ -71,6 +71,8 @@ interface RivuletNative {
   writeFolderFile: (arg: { destRoot: string; relativePath: string; bytes: Uint8Array }) => Promise<boolean>;
   pickFolder?: () => Promise<{ folderName: string; entries: FolderEntry[] } | null>;
   readFile?: (fullPath: string) => Promise<Uint8Array>;
+  // This machine's name, used as the default label when pairing.
+  deviceName?: () => Promise<{ name: string; platform: string }>;
   // Auto-save (desktop-local config)
   autoSaveGet?: () => Promise<AutoSaveConfig>;
   autoSaveSet?: (patch: Partial<AutoSaveConfig>) => Promise<AutoSaveConfig>;

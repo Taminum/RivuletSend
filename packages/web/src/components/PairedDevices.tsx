@@ -78,6 +78,19 @@ export function PairedDevices() {
     await load();
   }
 
+  async function rename(id: string, current: string) {
+    const next = window.prompt("Device name", current);
+    if (next === null) return; // cancelled
+    const label = next.trim();
+    if (!label || label === current) return;
+    try {
+      await api.renameDevice(id, label);
+      await load();
+    } catch {
+      setError("Couldn't rename that device.");
+    }
+  }
+
   return (
     <div className="card">
       <div className="panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -160,9 +173,14 @@ export function PairedDevices() {
                   {d.platform ? `${d.platform} · ` : ""}last seen {relativeTime(d.lastSeenAt)}
                 </span>
               </span>
-              <button className="link-btn" onClick={() => void remove(d.id)}>
-                Remove
-              </button>
+              <span className="row-actions">
+                <button className="link-btn" onClick={() => void rename(d.id, d.label)}>
+                  Rename
+                </button>
+                <button className="link-btn" onClick={() => void remove(d.id)}>
+                  Remove
+                </button>
+              </span>
             </li>
           ))}
         </ul>

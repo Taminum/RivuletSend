@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { contactName } from "../api";
 import { useContacts } from "../hooks/useContacts";
 import { usePresence } from "../presence/PresenceContext";
 import { selectionFromInputFiles } from "../folderSelect";
@@ -22,7 +23,7 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
     const q = query.trim().toLowerCase();
     if (!q) return accepted;
     return accepted.filter(
-      (c) => c.user.displayName.toLowerCase().includes(q) || (c.user.email ?? "").toLowerCase().includes(q),
+      (c) => contactName(c).toLowerCase().includes(q) || (c.user.email ?? "").toLowerCase().includes(q),
     );
   }, [accepted, query]);
 
@@ -99,11 +100,11 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
               const contactOnline = isContactOnline(c.user.id);
               return (
                 <li key={c.user.id} className="file-row hoverable">
-                  <Avatar id={c.user.id} name={c.user.displayName} online={contactOnline} />
+                  <Avatar id={c.user.id} name={contactName(c)} online={contactOnline} />
                   <span className="file-meta">
                     {/* Email lives in the tooltip — the row line shows presence. */}
                     <span className="file-name" title={c.user.email ?? undefined}>
-                      {c.user.displayName}
+                      {contactName(c)}
                     </span>
                     <span className={`file-sub ${contactOnline ? "online-tag" : ""}`}>
                       {contactOnline ? "Online" : "Offline"}
