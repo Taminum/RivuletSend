@@ -1,0 +1,100 @@
+# Production stack behind Caddy (automatic HTTPS).
+#   deploy/install.sh writes .env and runs:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Only Caddy publishes ports. Postgres, the API and signaling are reachable
+# only on the internal compose network — nothing but 80/443 is exposed.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rivulet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: rivulet
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rivulet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    # Apply migrations, then start.
+    command: sh -c "pnpm --filter @p2p/api exec prisma migrate deploy && node packages/api/dist/server.js"
+    environment:
+      NODE_ENV: production
+      PORT: 8081
+      DATABASE_URL: postgresql://rivulet:${POSTGRES_PASSWORD}@postgres:5432/rivulet?schema=public
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
+      WEB_ORIGIN: https://${RS_DOMAIN:?RS_DOMAIN is required}
+      COOKIE_SECURE: "true"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  signaling:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    command: node packages/signaling/dist/server.js
+    environment:
+      PORT: 8080
+      # Must match the API's JWT_SECRET / INTERNAL_API_SECRET.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
+      API_INTERNAL_URL: http://api:8081
+    depends_on:
+      - api
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+      # VITE_* values are inlined at BUILD time — they are the URLs the
+      # visitor's browser will call, i.e. the public domain, not service names.
+      args:
+        VITE_API_URL: https://${RS_DOMAIN}/api
+        VITE_SIGNALING_URL: wss://${RS_DOMAIN}/ws
+        VITE_TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+        VITE_STUN_URL: ${STUN_URL:-stun:stun.l.google.com:19302}
+        VITE_TURN_URL: ${TURN_URL:-}
+        VITE_TURN_USERNAME: ${TURN_USERNAME:-}
+        VITE_TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - signaling
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      RS_DOMAIN: ${RS_DOMAIN:?RS_DOMAIN is required}
+      RS_ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here — keep the volume and renewals survive restarts.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+      - signaling
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

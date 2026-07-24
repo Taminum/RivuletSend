@@ -1,0 +1,29 @@
+{
+	# Let's Encrypt registration address; set by docker-compose from .env.
+	email {$RS_ACME_EMAIL}
+}
+
+{$RS_DOMAIN} {
+	encode gzip
+
+	# Everything lives on ONE origin on purpose: the session cookie is
+	# SameSite=Lax, so a browser would not attach it to XHR aimed at a
+	# separate api.* host. Path routing keeps api, signaling and the app
+	# same-site, and the cookie just works.
+
+	# /api/* -> API. handle_path strips the prefix, so the API still sees
+	# its own routes (/auth/login, /contacts, ...).
+	handle_path /api/* {
+		reverse_proxy api:8081
+	}
+
+	# Signaling WebSocket. reverse_proxy upgrades automatically.
+	handle /ws {
+		reverse_proxy signaling:8080
+	}
+
+	# Static app (nginx), with SPA fallback handled inside that container.
+	handle {
+		reverse_proxy web:80
+	}
+}

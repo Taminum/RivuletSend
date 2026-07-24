@@ -6,7 +6,9 @@
 // need a TURN relay. Set the VITE_TURN_* vars (see .env.example) to point at a
 // coturn instance or hosted TURN provider and it gets appended automatically.
 
-const STUN_URL = import.meta.env.VITE_STUN_URL ?? "stun:stun.l.google.com:19302";
+// `||`, not `??`: a build arg that is declared but left empty inlines an empty
+// string, which would produce a useless { urls: "" } ICE server.
+const STUN_URL = import.meta.env.VITE_STUN_URL || "stun:stun.l.google.com:19302";
 
 export function getIceServers(): RTCIceServer[] {
   const servers: RTCIceServer[] = [{ urls: STUN_URL }];

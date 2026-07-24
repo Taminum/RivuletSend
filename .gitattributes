@@ -1,0 +1,5 @@
+# Shell scripts must keep LF endings: a CRLF install.sh fails on Linux with
+# "bad interpreter: /usr/bin/env bash^M".
+*.sh text eol=lf
+Dockerfile* text eol=lf
+Caddyfile text eol=lf

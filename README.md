@@ -83,6 +83,45 @@ Notes:
   placeholders in `docker-compose.yml`.
 - `docker compose down` stops it; add `-v` to also wipe the database volume.
 
+## Install on a server (one command)
+
+On a fresh Debian/Ubuntu VPS with a domain pointed at it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Taminum/RivuletSend/master/deploy/install.sh | sudo bash -s -- --domain send.example.com --email you@example.com
+```
+
+That installs Docker if it's missing, clones the repo to `/opt/rivuletsend`,
+generates the secrets, and starts the stack behind Caddy with automatic HTTPS.
+
+What it sets up:
+
+- Everything on **one origin** — `/` is the app, `/api/*` the API, `/ws` the
+  signaling socket. This isn't cosmetic: the session cookie is `SameSite=Lax`,
+  so a browser would not attach it to requests aimed at a separate `api.*` host.
+- Only Caddy publishes ports. Postgres, the API and signaling stay on the
+  internal Docker network.
+- `JWT_SECRET`, the internal secret and the database password are random per
+  install and written to `.env` (mode 600).
+
+Re-running the installer updates to the latest commit and **keeps existing
+secrets** — regenerating them would sign everyone out and lock the API out of
+its own database.
+
+Useful options: `--branch`, `--dir`, `--telegram-bot` + `--telegram-token`, and
+`--turn-url` / `--turn-user` / `--turn-pass`. Run with `--help` for the full
+list. Every flag also works as an environment variable.
+
+> Add a TURN relay for a real deployment. Without one, transfers fail for peers
+> behind symmetric NAT (some mobile networks, corporate wifi) — see
+> [Deploy](#deploy) below.
+
+Manage it afterwards:
+
+```bash
+cd /opt/rivuletsend && docker compose -f docker-compose.prod.yml logs -f
+```
+
 ## Sending folders
 
 Drop a folder (or use "send a folder") and the whole tree transfers as one unit,
@@ -137,6 +176,10 @@ Copy `packages/web/.env.example` to `packages/web/.env` and set:
 The signaling server reads `PORT` (default `8080`).
 
 ## Deploy
+
+For a single VPS, use the one-command installer above — it covers everything in
+this section except TURN. What follows is for splitting the pieces across
+hosting providers.
 
 - **web** — static build (`packages/web/dist`) → Cloudflare Pages / Vercel /
   Netlify. Set the `VITE_*` env vars at build time.
