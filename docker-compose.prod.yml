@@ -36,6 +36,11 @@ services:
       WEB_ORIGIN: https://${RS_DOMAIN:?RS_DOMAIN is required}
       COOKIE_SECURE: "true"
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # /turn-credentials mints coturn credentials with this secret. It must be
+      # the same value coturn runs with, and it must never reach the browser.
+      STUN_URL: ${STUN_URL:-stun:stun.l.google.com:19302}
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_URLS: ${TURN_URLS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,6 +98,56 @@ services:
       - web
       - api
       - signaling
+
+  # TURN relay. Enabled through COMPOSE_PROFILES=coturn in .env, which the
+  # installer sets unless you pointed it at an external relay.
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    profiles: ["coturn"]
+    restart: unless-stopped
+    # Host networking on purpose: a relay needs a wide UDP port range, and
+    # publishing hundreds of ports through Docker's userland proxy is both slow
+    # to start and bad for throughput. It also lets coturn see real peer
+    # addresses instead of the bridge's.
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      # Shared-secret (REST) auth: credentials are derived and expire, so none
+      # are stored here and none are permanent. Must match the API's TURN_SECRET.
+      - --use-auth-secret
+      # Compose interpolates before it filters by profile, so these must hold a
+      # value in .env even when coturn is switched off.
+      - --static-auth-secret=${TURN_SECRET:?TURN_SECRET must be set in .env, even with coturn disabled}
+      - --realm=${RS_DOMAIN:?RS_DOMAIN is required}
+      # Cloud VMs usually have a private address with 1:1 NAT to a public one;
+      # without this coturn would hand out the unreachable private address.
+      - --external-ip=${PUBLIC_IP:?PUBLIC_IP must be set in .env, even with coturn disabled}
+      - --min-port=${TURN_MIN_PORT:-49160}
+      - --max-port=${TURN_MAX_PORT:-49200}
+      # No certificates here: WebRTC already encrypts end-to-end, so the relay
+      # forwards ciphertext either way. TLS on 5349 would only add firewall
+      # traversal, at the cost of sharing and reloading Caddy's certificates.
+      - --no-tls
+      - --no-dtls
+      # The admin interface would otherwise listen on the host.
+      - --no-cli
+      - --no-multicast-peers
+      # A relay that will forward to private ranges is an open proxy into this
+      # host's own network — including Postgres and the cloud metadata service
+      # at 169.254.169.254. Refuse them all.
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=::1
+      - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 
 volumes:
   pgdata:

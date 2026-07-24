@@ -92,29 +92,33 @@ curl -fsSL https://raw.githubusercontent.com/Taminum/RivuletSend/master/deploy/i
 ```
 
 That installs Docker if it's missing, clones the repo to `/opt/rivuletsend`,
-generates the secrets, and starts the stack behind Caddy with automatic HTTPS.
+generates the secrets, and starts the stack behind Caddy with automatic HTTPS —
+**including a TURN relay**, so transfers also work for peers behind symmetric
+NAT (mobile networks, corporate wifi), where a direct connection is impossible.
 
 What it sets up:
 
 - Everything on **one origin** — `/` is the app, `/api/*` the API, `/ws` the
   signaling socket. This isn't cosmetic: the session cookie is `SameSite=Lax`,
   so a browser would not attach it to requests aimed at a separate `api.*` host.
-- Only Caddy publishes ports. Postgres, the API and signaling stay on the
-  internal Docker network.
-- `JWT_SECRET`, the internal secret and the database password are random per
-  install and written to `.env` (mode 600).
+- Only Caddy publishes web ports. Postgres, the API and signaling stay on the
+  internal Docker network; coturn uses host networking because a relay needs a
+  wide UDP range.
+- `JWT_SECRET`, the internal secret, the database password and the TURN secret
+  are random per install and written to `.env` (mode 600).
 
 Re-running the installer updates to the latest commit and **keeps existing
 secrets** — regenerating them would sign everyone out and lock the API out of
 its own database.
 
-Useful options: `--branch`, `--dir`, `--telegram-bot` + `--telegram-token`, and
-`--turn-url` / `--turn-user` / `--turn-pass`. Run with `--help` for the full
-list. Every flag also works as an environment variable.
+Useful options: `--branch`, `--dir`, `--telegram-bot` + `--telegram-token`,
+`--public-ip`, `--turn-ports`, and `--turn-url` / `--turn-user` / `--turn-pass`
+to use an external relay instead of the built-in one. Run with `--help` for the
+full list. Every flag also works as an environment variable.
 
-> Add a TURN relay for a real deployment. Without one, transfers fail for peers
-> behind symmetric NAT (some mobile networks, corporate wifi) — see
-> [Deploy](#deploy) below.
+Ports to open, if your host has a cloud firewall on top of the server's own:
+`80/tcp`, `443/tcp+udp`, `3478/tcp+udp`, and `49160-49200/udp` for relayed
+media.
 
 Manage it afterwards:
 
@@ -169,16 +173,35 @@ Copy `packages/web/.env.example` to `packages/web/.env` and set:
 | ----------------------- | -------------------------------------------------------------- |
 | `VITE_SIGNALING_URL`    | WebSocket URL of the signaling server (`wss://` in production) |
 | `VITE_STUN_URL`         | STUN server (defaults to Google public STUN)                   |
-| `VITE_TURN_URL`         | TURN relay URL(s), comma-separated — **needed behind symmetric NATs** |
+| `VITE_TURN_URL`         | TURN relay URL(s), comma-separated — *override, see below*      |
 | `VITE_TURN_USERNAME`    | TURN username                                                  |
 | `VITE_TURN_CREDENTIAL`  | TURN credential                                                |
 
 The signaling server reads `PORT` (default `8080`).
 
+### How the relay is authenticated
+
+By default the app does **not** take TURN credentials from the build. It asks
+`GET /turn-credentials` at runtime and the API mints a short-lived one using
+coturn's shared-secret scheme: the username is an expiry timestamp, the password
+is `base64(HMAC-SHA1(TURN_SECRET, username))`.
+
+The reason is that anything compiled into the bundle is public. A fixed TURN
+password in public JavaScript is an open relay — anyone who reads the page
+source gets free bandwidth on your server. A derived credential expires on its
+own, and the secret itself never leaves the server.
+
+Set `TURN_SECRET` + `TURN_URLS` on the API to enable it (the installer does).
+The `VITE_TURN_*` build vars still take precedence when set, for deployments
+pointed at a hosted provider that issues its own long-lived credentials.
+
+The endpoint is intentionally unauthenticated — code-based transfers have no
+account and need the relay too — so it is rate-limited per IP.
+
 ## Deploy
 
 For a single VPS, use the one-command installer above — it covers everything in
-this section except TURN. What follows is for splitting the pieces across
+this section, TURN included. What follows is for splitting the pieces across
 hosting providers.
 
 - **web** — static build (`packages/web/dist`) → Cloudflare Pages / Vercel /
@@ -194,10 +217,14 @@ hosting providers.
   ```
 
 - **TURN** (for the fraction of users behind symmetric NATs where direct P2P
-  can't be established) — stand up [coturn](https://github.com/coturn/coturn) on
-  a VPS with UDP ports open, or use a hosted TURN provider, then set the
-  `VITE_TURN_*` vars. This is the single most common reason a WebRTC transfer
-  silently fails for some users, so don't skip it for a real deployment.
+  can't be established) — the installer runs [coturn](https://github.com/coturn/coturn)
+  for you; see `docker-compose.prod.yml` for the exact configuration if you're
+  standing one up by hand. Note the `denied-peer-ip` ranges there: a relay that
+  will forward into private address space is an open proxy into your own network,
+  including the cloud metadata service at `169.254.169.254`. Alternatively point
+  the app at a hosted provider with the `VITE_TURN_*` vars. Missing TURN is the
+  single most common reason a WebRTC transfer silently fails for some users, so
+  don't skip it for a real deployment.
 
 ## Privacy model
 

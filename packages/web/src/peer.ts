@@ -16,7 +16,7 @@ import {
   type SendProgress,
   type ReceiveProgress,
 } from "./fileTransfer";
-import { getIceServers } from "./iceConfig";
+import { getIceServers, primeIceServers } from "./iceConfig";
 
 const DEFAULT_SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL ?? "ws://localhost:8080";
 
@@ -51,6 +51,10 @@ export class PeerConnection {
   onMyDeviceUpdate: (deviceId: string, online: boolean) => void = () => {};
 
   constructor(private signalingUrl: string = DEFAULT_SIGNALING_URL) {
+    // Start fetching TURN credentials now: by the time a peer connection is
+    // actually built (after a full round trip through signaling) they're cached,
+    // so getIceServers() can stay synchronous.
+    void primeIceServers();
     this.receiver.onFile = (file) => this.onIncomingFile(file);
     this.receiver.onProgress = (progress) => this.onReceiveProgress(progress);
     this.receiver.onFolderStart = (s) => this.onFolderStart(s, "receive");
@@ -165,6 +169,8 @@ export class PeerConnection {
   }
 
   private connectSignaling(): WebSocket {
+    // No-op while the cached credential is still fresh.
+    void primeIceServers();
     const ws = new WebSocket(this.signalingUrl);
     this.ws = ws;
     ws.addEventListener("message", (event) => this.handleSignalingMessage(event));

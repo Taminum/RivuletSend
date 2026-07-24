@@ -22,6 +22,10 @@ TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TURN_URL="${TURN_URL:-}"
 TURN_USERNAME="${TURN_USERNAME:-}"
 TURN_CREDENTIAL="${TURN_CREDENTIAL:-}"
+PUBLIC_IP="${PUBLIC_IP:-}"
+TURN_MIN_PORT="${TURN_MIN_PORT:-49160}"
+TURN_MAX_PORT="${TURN_MAX_PORT:-49200}"
+NO_TURN=0
 ASSUME_YES=0
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -37,14 +41,20 @@ Required:
   --domain <domain>        Public domain pointing at this server (A/AAAA record)
   --email <address>        Contact address for Let's Encrypt
 
+A TURN relay (coturn) is installed alongside the app by default — without one,
+transfers fail for peers behind symmetric NAT.
+
 Optional:
   --dir <path>             Install directory (default: /opt/rivuletsend)
   --branch <name>          Git branch to deploy (default: master)
   --telegram-bot <name>    Telegram bot username, enables Telegram sign-in
   --telegram-token <token> Telegram bot token (required with --telegram-bot)
-  --turn-url <url>         TURN relay URL(s), comma-separated
-  --turn-user <name>       TURN username
-  --turn-pass <secret>     TURN credential
+  --public-ip <addr>       Public IP for the relay (default: detected)
+  --turn-ports <min-max>   Relay UDP port range (default: 49160-49200)
+  --turn-url <url>         Use an EXTERNAL TURN relay instead of installing one
+  --turn-user <name>       External TURN username
+  --turn-pass <secret>     External TURN credential
+  --no-turn                Install no relay at all (not recommended)
   -y, --yes                Don't stop for confirmations
   -h, --help               Show this help
 
@@ -64,6 +74,13 @@ while [ $# -gt 0 ]; do
     --turn-url) TURN_URL="${2:-}"; shift 2 ;;
     --turn-user) TURN_USERNAME="${2:-}"; shift 2 ;;
     --turn-pass) TURN_CREDENTIAL="${2:-}"; shift 2 ;;
+    --public-ip) PUBLIC_IP="${2:-}"; shift 2 ;;
+    --turn-ports)
+      TURN_MIN_PORT="${2%%-*}"
+      TURN_MAX_PORT="${2##*-}"
+      shift 2
+      ;;
+    --no-turn) NO_TURN=1; shift ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
@@ -117,11 +134,29 @@ if [ -n "$TELEGRAM_BOT_USERNAME" ] && [ -z "$TELEGRAM_BOT_TOKEN" ]; then
   die "--telegram-bot needs --telegram-token, or sign-in will always fail"
 fi
 
+# Relay: a local coturn unless an external one was supplied (or TURN refused).
+if [ "$NO_TURN" -eq 1 ]; then
+  TURN_MODE=none
+elif [ -n "$TURN_URL" ]; then
+  TURN_MODE=external
+  [ -n "$TURN_USERNAME" ] && [ -n "$TURN_CREDENTIAL" ] \
+    || die "--turn-url needs --turn-user and --turn-pass"
+else
+  TURN_MODE=local
+fi
+
+case "$TURN_MODE" in
+  local) turn_label="coturn on this server (ports $TURN_MIN_PORT-$TURN_MAX_PORT/udp)" ;;
+  external) turn_label="external ($TURN_URL)" ;;
+  none) turn_label="none — transfers will fail behind symmetric NAT" ;;
+esac
+
 bold "RivuletSend installer"
 info "domain     $DOMAIN"
 info "email      $EMAIL"
 info "directory  $INSTALL_DIR"
 info "branch     $BRANCH"
+info "TURN       $turn_label"
 echo
 
 # --- Dependencies ------------------------------------------------------------
@@ -149,17 +184,29 @@ docker compose version >/dev/null 2>&1 \
   || die "docker compose v2 plugin missing — install docker-compose-plugin and re-run"
 systemctl enable --now docker >/dev/null 2>&1 || true
 
-# --- DNS sanity check --------------------------------------------------------
+# --- Address checks ----------------------------------------------------------
 
 # Let's Encrypt validates over HTTP, so a domain that doesn't resolve here means
 # certificate issuance will fail. Warn early instead of failing deep in Caddy.
-public_ip="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+[ -n "$PUBLIC_IP" ] || PUBLIC_IP="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
 resolved="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR==1 {print $1}' || true)"
 if [ -z "$resolved" ]; then
   warn "$DOMAIN does not resolve yet — HTTPS will fail until the DNS record exists"
-elif [ -n "$public_ip" ] && [ "$resolved" != "$public_ip" ]; then
-  warn "$DOMAIN resolves to $resolved but this server looks like $public_ip"
+elif [ -n "$PUBLIC_IP" ] && [ "$resolved" != "$PUBLIC_IP" ]; then
+  warn "$DOMAIN resolves to $resolved but this server looks like $PUBLIC_IP"
   warn "if that is not a proxy (Cloudflare etc.), certificate issuance will fail"
+fi
+
+# coturn must advertise the address peers can actually reach. On a cloud VM the
+# interface usually holds a private address behind 1:1 NAT, so a wrong value
+# here produces relay candidates nobody can connect to.
+if [ "$TURN_MODE" = local ] && [ -z "$PUBLIC_IP" ]; then
+  if [ -n "$resolved" ]; then
+    PUBLIC_IP="$resolved"
+    warn "could not detect this server's public IP; using $PUBLIC_IP from DNS"
+  else
+    die "could not detect the public IP for the relay — pass --public-ip <addr>"
+  fi
 fi
 if [ "$ASSUME_YES" -eq 0 ] && [ -e /dev/tty ]; then
   case "$(ask 'Continue? [Y/n] ')" in
@@ -191,13 +238,30 @@ existing() {
 JWT_SECRET="$(existing JWT_SECRET)"
 INTERNAL_SECRET="$(existing INTERNAL_SECRET)"
 POSTGRES_PASSWORD="$(existing POSTGRES_PASSWORD)"
+TURN_SECRET="$(existing TURN_SECRET)"
 [ -n "$JWT_SECRET" ] || JWT_SECRET="$(openssl rand -hex 32)"
 [ -n "$INTERNAL_SECRET" ] || INTERNAL_SECRET="$(openssl rand -hex 32)"
+[ -n "$TURN_SECRET" ] || TURN_SECRET="$(openssl rand -hex 32)"
 if [ -z "$POSTGRES_PASSWORD" ]; then
   # Hex only: the password is interpolated into a postgres:// URL, where '@'
   # or '/' from a random base64 string would corrupt the connection string.
   POSTGRES_PASSWORD="$(openssl rand -hex 24)"
 fi
+
+# With a local relay the API mints credentials for it, and the browser fetches
+# them at runtime — nothing TURN-related is baked into the web bundle.
+# COMPOSE_PROFILES is read from .env by docker compose, so plain
+# `docker compose -f docker-compose.prod.yml up -d` in this directory keeps
+# starting coturn too.
+if [ "$TURN_MODE" = local ]; then
+  TURN_URLS="turn:$DOMAIN:3478?transport=udp,turn:$DOMAIN:3478?transport=tcp"
+  COMPOSE_PROFILES=coturn
+else
+  TURN_URLS=""
+  COMPOSE_PROFILES=""
+fi
+# Inert unless coturn runs, but compose interpolates it either way.
+[ -n "$PUBLIC_IP" ] || PUBLIC_IP=0.0.0.0
 
 bold "Writing .env"
 umask 077
@@ -213,8 +277,21 @@ POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 TELEGRAM_BOT_USERNAME=$TELEGRAM_BOT_USERNAME
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 
-# TURN relay — required for peers behind symmetric NATs, where a direct
-# connection can't be established. Leave blank to run without it.
+# --- TURN relay ---
+# Empty COMPOSE_PROFILES means no local coturn. If you enable it by hand, make
+# sure PUBLIC_IP is this server's real public address.
+COMPOSE_PROFILES=$COMPOSE_PROFILES
+PUBLIC_IP=$PUBLIC_IP
+TURN_MIN_PORT=$TURN_MIN_PORT
+TURN_MAX_PORT=$TURN_MAX_PORT
+# Shared with coturn; the API derives expiring credentials from it. Never
+# reaches the browser.
+TURN_SECRET=$TURN_SECRET
+# Relay URLs the API hands to clients (local relay only).
+TURN_URLS=$TURN_URLS
+
+# External relay instead of the local one: these ARE compiled into the web
+# bundle, so anyone can read them. Only for a provider you trust to rate-limit.
 TURN_URL=$TURN_URL
 TURN_USERNAME=$TURN_USERNAME
 TURN_CREDENTIAL=$TURN_CREDENTIAL
@@ -225,10 +302,16 @@ umask 022
 # --- Firewall ----------------------------------------------------------------
 
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "^Status: active"; then
-  bold "Opening ports 80/443 in ufw"
+  bold "Opening ports in ufw"
   ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
   ufw allow 443/udp >/dev/null
+  if [ "$TURN_MODE" = local ]; then
+    # 3478 is the relay's control port; the range carries the relayed media.
+    ufw allow 3478/tcp >/dev/null
+    ufw allow 3478/udp >/dev/null
+    ufw allow "$TURN_MIN_PORT:$TURN_MAX_PORT/udp" >/dev/null
+  fi
 fi
 
 # --- Build and start ---------------------------------------------------------
@@ -257,13 +340,24 @@ else
   info "docker compose -f $INSTALL_DIR/docker-compose.prod.yml logs -f caddy"
 fi
 
-if [ -z "$TURN_URL" ]; then
-  echo
-  warn "no TURN relay configured — transfers will fail for peers behind"
-  warn "symmetric NAT (some mobile networks, corporate wifi). To add one later,"
-  warn "set TURN_URL/TURN_USERNAME/TURN_CREDENTIAL in $INSTALL_DIR/.env and re-run:"
-  info "docker compose -f docker-compose.prod.yml up -d --build web"
-fi
+case "$TURN_MODE" in
+  local)
+    # A relay that isn't reachable is worse than none: peers wait on it, then
+    # fail. Check the control port from the outside before declaring success.
+    if command -v ss >/dev/null 2>&1 && ! ss -lun 2>/dev/null | grep -q ":3478"; then
+      warn "coturn is not listening on 3478/udp — check: docker compose -f docker-compose.prod.yml logs coturn"
+    fi
+    echo
+    info "TURN relay: turn:$DOMAIN:3478 (udp+tcp), media on $TURN_MIN_PORT-$TURN_MAX_PORT/udp"
+    info "If this server sits behind a cloud firewall or security group, allow"
+    info "those ports there too — ufw rules alone are not enough."
+    ;;
+  none)
+    echo
+    warn "no TURN relay — transfers will fail for peers behind symmetric NAT"
+    warn "(some mobile networks, corporate wifi). Re-run without --no-turn to add one."
+    ;;
+esac
 
 cat <<EOF
 
