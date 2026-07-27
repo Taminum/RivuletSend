@@ -2,11 +2,13 @@ import type {
   ClientToServerMessage,
   ServerToClientMessage,
   CallFailureReason,
+  DataChannelMessage,
 } from "@p2p/shared";
 import {
   FileReceiver,
-  sendFile as sendFileOverChannel,
   sendFolder as sendFolderOverChannel,
+  streamFileBody,
+  sendControl,
   type IncomingFile,
   type IncomingFolder,
   type FolderEntry,
@@ -20,6 +22,22 @@ import { getIceServers, primeIceServers } from "./iceConfig";
 
 const DEFAULT_SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL ?? "ws://localhost:8080";
 
+// How long a dropped connection may take to recover via ICE restart before the
+// transfer is given up as failed. WebRTC uses "disconnected" for a blip that
+// may self-heal, so we wait rather than failing on the first sign of trouble.
+const GRACE_MS = 30_000;
+
+// The single-file send currently in flight, so a reconnect can resume it.
+interface ActiveSend {
+  id: string;
+  file: File;
+  nextSeq: number;
+  aborter: AbortController;
+  ackedSeq: number;
+  resolve: () => void;
+  reject: (err: Error) => void;
+}
+
 type SignalPayload =
   | { kind: "sdp"; description: RTCSessionDescriptionInit }
   | { kind: "candidate"; candidate: RTCIceCandidateInit };
@@ -32,6 +50,11 @@ export class PeerConnection {
   // Signals can race the local RTCPeerConnection's own creation (e.g. an ICE
   // candidate arriving before 'ready' has been processed) — queue and flush.
   private pendingSignals: SignalPayload[] = [];
+  // Reconnect state (same-session ICE-restart resume).
+  private initiator = false;
+  private reconnecting = false;
+  private graceTimer: ReturnType<typeof setTimeout> | null = null;
+  private activeSend: ActiveSend | null = null;
 
   onConnected: () => void = () => {};
   onDisconnected: (reason?: string) => void = () => {};
@@ -49,6 +72,10 @@ export class PeerConnection {
   onPresenceUpdate: (userId: string, online: boolean) => void = () => {};
   onMyDevicesSnapshot: (online: string[]) => void = () => {};
   onMyDeviceUpdate: (deviceId: string, online: boolean) => void = () => {};
+  // Fired when the connection drops and while it's trying to recover, and again
+  // once it's back — for a "Reconnecting…" indicator.
+  onReconnecting: () => void = () => {};
+  onReconnected: () => void = () => {};
 
   constructor(private signalingUrl: string = DEFAULT_SIGNALING_URL) {
     // Start fetching TURN credentials now: by the time a peer connection is
@@ -66,6 +93,8 @@ export class PeerConnection {
           ? "Not enough local storage space to receive this file."
           : "Failed to save the received file to disk.",
       );
+    // Receiver sends chunk-acks / resume-requests back over the data channel.
+    this.receiver.onSendControl = (msg) => this.sendChannelControl(msg);
   }
 
   createRoom(): Promise<string> {
@@ -143,16 +172,137 @@ export class PeerConnection {
     this.send({ type: "call-device", targetDeviceId });
   }
 
-  async sendFile(file: File): Promise<void> {
+  // Resumable single-file send. Resolves when the file fully arrives (across any
+  // reconnects), rejects if the connection is lost past the grace window.
+  sendFile(file: File): Promise<void> {
     if (!this.channel || this.channel.readyState !== "open") {
-      throw new Error("No open peer connection to send over");
+      return Promise.reject(new Error("No open peer connection to send over"));
     }
-    await sendFileOverChannel(
+    const id = crypto.randomUUID();
+    this.onSendStart({ id, name: file.name, size: file.size });
+    sendControl(this.channel, {
+      type: "file-start",
+      id,
+      name: file.name,
+      size: file.size,
+      mimeType: file.type || "application/octet-stream",
+    });
+    return new Promise<void>((resolve, reject) => {
+      this.activeSend = { id, file, nextSeq: 0, aborter: new AbortController(), ackedSeq: -1, resolve, reject };
+      void this.pumpSend();
+    });
+  }
+
+  private async pumpSend(): Promise<void> {
+    const s = this.activeSend;
+    if (!s || !this.channel) return;
+    const result = await streamFileBody(
       this.channel,
-      file,
-      (progress) => this.onSendProgress(progress),
-      (start) => this.onSendStart(start),
+      s.id,
+      s.file,
+      (sent) => this.onSendProgress({ id: s.id, sent, total: s.file.size }),
+      { startSeq: s.nextSeq, signal: s.aborter.signal },
     );
+    if (this.activeSend !== s) return; // superseded (failed / replaced)
+    if (result.completed) {
+      sendControl(this.channel, { type: "file-end", id: s.id });
+      this.activeSend = null;
+      s.resolve();
+    } else {
+      // Interrupted by a drop; remember where to pick up and wait for the
+      // receiver's resume-request once the connection is back.
+      s.nextSeq = result.nextSeq;
+    }
+  }
+
+  private sendChannelControl(message: DataChannelMessage): void {
+    if (this.channel && this.channel.readyState === "open") {
+      try {
+        sendControl(this.channel, message);
+      } catch {
+        /* channel closing */
+      }
+    }
+  }
+
+  private onResumeRequest(id: string, fromSeq: number): void {
+    const s = this.activeSend;
+    if (!s || s.id !== id) {
+      this.sendChannelControl({ type: "resume-response", id, accepted: false, fromSeq: 0 });
+      return;
+    }
+    s.nextSeq = fromSeq;
+    s.aborter = new AbortController();
+    this.sendChannelControl({ type: "resume-response", id, accepted: true, fromSeq });
+    void this.pumpSend();
+  }
+
+  // --- Reconnect state machine (driven by ICE connection state) ---
+
+  private onConnectionInterrupted(): void {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    this.onReconnecting();
+    // Stop the in-flight send; the pump remembers nextSeq.
+    this.activeSend?.aborter.abort();
+    // The original offerer re-offers with restarted ICE; the answerer just waits.
+    if (this.initiator && this.pc) {
+      const pc = this.pc;
+      try {
+        pc.restartIce();
+        pc.createOffer()
+          .then((offer) => pc.setLocalDescription(offer))
+          .then(() =>
+            this.send({
+              type: "signal",
+              payload: { kind: "sdp", description: pc.localDescription! } satisfies SignalPayload,
+            }),
+          )
+          .catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    }
+    this.graceTimer = setTimeout(() => this.onGraceExpired(), GRACE_MS);
+  }
+
+  private onConnectionRestored(): void {
+    if (!this.reconnecting) return;
+    this.reconnecting = false;
+    if (this.graceTimer) {
+      clearTimeout(this.graceTimer);
+      this.graceTimer = null;
+    }
+    this.onReconnected();
+    // Whichever side is receiving asks to resume; a no-op on the sending side.
+    this.receiver.requestResume();
+  }
+
+  private onGraceExpired(): void {
+    if (!this.reconnecting) return;
+    this.reconnecting = false;
+    this.graceTimer = null;
+    this.activeSend?.reject(new Error("connection_lost"));
+    this.activeSend = null;
+    this.receiver.failAll("connection_lost");
+    this.onDisconnected("connection_lost");
+  }
+
+  // --- e2e-only hooks: exercise the resume protocol over the live channel.
+  // Headless WebRTC can't be network-partitioned reliably, so these drive the
+  // same code paths a real ICE restart would, without an actual outage. ---
+  _testAbortSend(): void {
+    this.activeSend?.aborter.abort();
+  }
+  _testRequestResume(): void {
+    this.receiver.requestResume();
+  }
+  _testForceFail(): void {
+    this.reconnecting = true;
+    this.onGraceExpired();
+  }
+  _testReceiveProgress(): { id: string; received: number; total: number; contiguousSeq: number }[] {
+    return this.receiver.snapshot();
   }
 
   async sendFolder(folderName: string, entries: FolderEntry[]): Promise<void> {
@@ -233,6 +383,7 @@ export class PeerConnection {
 
     const pc = new RTCPeerConnection({ iceServers: getIceServers() });
     this.pc = pc;
+    this.initiator = initiator;
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -243,12 +394,17 @@ export class PeerConnection {
       }
     };
 
+    // "disconnected"/"failed" may be a transient blip — try to recover via ICE
+    // restart within the grace window rather than failing the transfer outright.
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      if (state === "disconnected" || state === "failed") this.onConnectionInterrupted();
+      else if (state === "connected" || state === "completed") this.onConnectionRestored();
+    };
+
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed") {
-        this.onDisconnected("connection_failed");
-      } else if (pc.connectionState === "closed") {
-        this.onDisconnected("connection_closed");
-      }
+      // Real teardown only. Transient failures are handled via ICE state above.
+      if (pc.connectionState === "closed") this.onDisconnected("connection_closed");
     };
 
     if (initiator) {
@@ -275,8 +431,31 @@ export class PeerConnection {
     this.channel = channel;
     channel.binaryType = "arraybuffer";
     channel.onopen = () => this.onConnected();
-    channel.onclose = () => this.onDisconnected("channel_closed");
-    channel.onmessage = (event) => this.receiver.handleMessage(event.data);
+    // A channel close during a reconnect attempt is not a hard failure — the ICE
+    // state machine + grace window decide the transfer's fate.
+    channel.onclose = () => {
+      if (!this.reconnecting) this.onDisconnected("channel_closed");
+    };
+    channel.onmessage = (event) => this.onChannelMessage(event.data);
+  }
+
+  // Intercepts resume/ack control messages (meant for the sender/receiver
+  // orchestration here) and forwards everything else to the FileReceiver.
+  private onChannelMessage(data: string | ArrayBuffer): void {
+    if (typeof data === "string") {
+      const msg = JSON.parse(data) as DataChannelMessage;
+      switch (msg.type) {
+        case "chunk-ack":
+          if (this.activeSend?.id === msg.id) this.activeSend.ackedSeq = msg.contiguousSeq;
+          return;
+        case "resume-request":
+          this.onResumeRequest(msg.id, msg.fromSeq);
+          return;
+        case "resume-response":
+          return; // receiver side: sender agreed; nothing to do
+      }
+    }
+    this.receiver.handleMessage(data);
   }
 
   private handleSignal(payload: SignalPayload): void {

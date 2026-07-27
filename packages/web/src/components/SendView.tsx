@@ -145,6 +145,11 @@ export function SendView({
               </>
             )}
           </div>
+          {connected && !allDone && (
+            <p className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
+              Reconnects automatically if the connection drops — closing the tab cancels the transfer.
+            </p>
+          )}
         </div>
 
         <div className="card">

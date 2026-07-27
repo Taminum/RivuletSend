@@ -61,6 +61,9 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
   const getPeer = useCallback((): PeerConnection => {
     if (!peerRef.current) {
       const peer = new PeerConnection();
+      // Dev/e2e only: lets the reconnect-resume test drive the resume protocol
+      // over the live channel (headless WebRTC can't be network-partitioned).
+      if (import.meta.env.DEV) (window as unknown as { __peer?: PeerConnection }).__peer = peer;
       peer.onConnected = () => setConnected(true);
       peer.onDisconnected = (reason) => {
         setConnected(false);

@@ -19,6 +19,11 @@ function shouldUseOpfs(): boolean {
 const HIGH_WATER_MARK = 4 * 1024 * 1024;
 const LOW_WATER_MARK = 1 * 1024 * 1024;
 
+// Acknowledge received progress every 16 MB of contiguous data: frequent enough
+// to bound how much a reconnect has to re-send, rare enough to add no real
+// overhead.
+const ACK_INTERVAL = 16 * 1024 * 1024;
+
 export interface SendProgress {
   id: string;
   sent: number;
@@ -183,38 +188,71 @@ export async function sendFolder(
   }
 }
 
-async function streamFileBody(
+export interface StreamResult {
+  completed: boolean; // false if interrupted (aborted / channel died) mid-file
+  nextSeq: number; // seq to resume from
+}
+
+// Streams a file's chunks over the channel. Resumable: starts at opts.startSeq
+// (seeks the File with slice()) and stops early — returning completed:false and
+// the next seq — if opts.signal aborts or the channel dies mid-send. That's what
+// lets a same-session reconnect pick the send back up where it left off.
+export async function streamFileBody(
   channel: RTCDataChannel,
   id: string,
   file: File,
   onSent: (sent: number) => void,
-): Promise<void> {
-  let offset = 0;
-  let seq = 0;
+  opts: { startSeq?: number; signal?: AbortSignal } = {},
+): Promise<StreamResult> {
+  channel.bufferedAmountLowThreshold = LOW_WATER_MARK;
+  let seq = opts.startSeq ?? 0;
+  let offset = seq * CHUNK_SIZE;
+  const { signal } = opts;
+
   while (offset < file.size) {
-    await waitForBufferedAmountLow(channel);
-    const slice = file.slice(offset, offset + CHUNK_SIZE);
-    const buffer = await slice.arrayBuffer();
-    sendControl(channel, { type: "chunk", id, seq });
-    channel.send(buffer);
+    if (signal?.aborted) return { completed: false, nextSeq: seq };
+    const drained = await waitForBufferedAmountLow(channel, signal);
+    if (!drained) return { completed: false, nextSeq: seq };
+    const buffer = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer();
+    if (signal?.aborted) return { completed: false, nextSeq: seq };
+    try {
+      sendControl(channel, { type: "chunk", id, seq });
+      channel.send(buffer);
+    } catch {
+      return { completed: false, nextSeq: seq }; // channel closed under us
+    }
     offset += buffer.byteLength;
     seq += 1;
     onSent(offset);
   }
+  return { completed: true, nextSeq: seq };
 }
 
-function sendControl(channel: RTCDataChannel, message: DataChannelMessage): void {
+export function sendControl(channel: RTCDataChannel, message: DataChannelMessage): void {
   channel.send(JSON.stringify(message));
 }
 
-function waitForBufferedAmountLow(channel: RTCDataChannel): Promise<void> {
-  if (channel.bufferedAmount <= HIGH_WATER_MARK) return Promise.resolve();
+// Resolves true when the buffer drains, false if the signal aborts first — so a
+// send interrupted by a disconnect doesn't hang forever awaiting a drain event
+// that will never fire on the dead channel.
+function waitForBufferedAmountLow(channel: RTCDataChannel, signal?: AbortSignal): Promise<boolean> {
+  if (channel.bufferedAmount <= HIGH_WATER_MARK) return Promise.resolve(true);
+  if (signal?.aborted) return Promise.resolve(false);
   return new Promise((resolve) => {
-    const handler = () => {
-      channel.removeEventListener("bufferedamountlow", handler);
-      resolve();
+    const cleanup = () => {
+      channel.removeEventListener("bufferedamountlow", onLow);
+      signal?.removeEventListener("abort", onAbort);
     };
-    channel.addEventListener("bufferedamountlow", handler);
+    const onLow = () => {
+      cleanup();
+      resolve(true);
+    };
+    const onAbort = () => {
+      cleanup();
+      resolve(false);
+    };
+    channel.addEventListener("bufferedamountlow", onLow);
+    signal?.addEventListener("abort", onAbort);
   });
 }
 
@@ -232,6 +270,10 @@ interface InProgressFile {
   writer?: Promise<OpfsWriter>;
   writeChain: Promise<void>;
   failed: boolean;
+  // Highest seq received with no gap before it — what's safe to resume from.
+  contiguousSeq: number;
+  // Bytes of contiguous data since the last chunk-ack was sent.
+  bytesSinceAck: number;
 }
 
 interface FolderContext {
@@ -261,6 +303,41 @@ export class FileReceiver {
   onFolder: (folder: IncomingFolder) => void = () => {};
   // Reason is a stable code, e.g. "not_enough_space" or "opfs_write_failed".
   onError: (id: string, reason: string) => void = () => {};
+  // Sends a control message back to the sender (chunk-ack / resume-request).
+  // Wired by the peer to the RTCDataChannel.
+  onSendControl: (message: DataChannelMessage) => void = () => {};
+
+  // After a reconnect, ask the sender to resume each in-progress file from the
+  // first seq we're still missing. contiguousSeq is the last gap-free seq, so
+  // +1 is the next one we need.
+  requestResume(): void {
+    for (const [id, file] of this.files) {
+      if (!file.failed) this.onSendControl({ type: "resume-request", id, fromSeq: file.contiguousSeq + 1 });
+    }
+  }
+
+  // e2e-only: snapshot of in-progress receives, so a test can catch a transfer
+  // mid-flight to interrupt it.
+  snapshot(): { id: string; received: number; total: number; contiguousSeq: number }[] {
+    return [...this.files.entries()].map(([id, f]) => ({
+      id,
+      received: f.received,
+      total: f.size,
+      contiguousSeq: f.contiguousSeq,
+    }));
+  }
+
+  // Give up on every in-progress file (grace window expired without recovery).
+  failAll(reason: string): void {
+    for (const [id, file] of this.files) {
+      if (!file.failed) {
+        file.failed = true;
+        void file.writer?.then((w) => w.abort()).catch(() => {});
+        this.onError(id, reason);
+      }
+    }
+    this.files.clear();
+  }
 
   handleMessage(data: string | ArrayBuffer): void {
     if (typeof data === "string") {
@@ -302,6 +379,8 @@ export class FileReceiver {
           received: 0,
           writeChain: Promise.resolve(),
           failed: false,
+          contiguousSeq: -1,
+          bytesSinceAck: 0,
         };
         // Folders stay in memory (typically many small files); OPFS backs single
         // large files, where the growing in-memory array was the OOM risk.
@@ -339,7 +418,20 @@ export class FileReceiver {
     const file = this.files.get(fileId);
     if (!file || file.failed) return;
 
+    // Idempotent resume: a reconnect may replay chunks we already have.
+    if (seq <= file.contiguousSeq) return;
+
     file.received += data.byteLength;
+    // Ordered channel: a new chunk is always the next contiguous seq.
+    if (seq === file.contiguousSeq + 1) file.contiguousSeq = seq;
+
+    // Acknowledge contiguous progress periodically so a resume knows how far it
+    // safely got.
+    file.bytesSinceAck += data.byteLength;
+    if (file.bytesSinceAck >= ACK_INTERVAL) {
+      file.bytesSinceAck = 0;
+      this.onSendControl({ type: "chunk-ack", id: fileId, contiguousSeq: file.contiguousSeq });
+    }
 
     if (file.writer) {
       // Serialize onto the write chain (offset-addressed, so order is by seq
