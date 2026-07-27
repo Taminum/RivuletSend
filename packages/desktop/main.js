@@ -3,12 +3,21 @@
 // BrowserWindow unmodified. On top of that we expose native folder IPC so the
 // receiver can write a real folder tree to disk — no File System Access API
 // limits, no zip fallback.
-const { app, BrowserWindow, ipcMain, dialog, Notification, shell, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Notification, shell, Menu, Tray, nativeImage } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 
 let mainWindow = null;
+let tray = null;
+// Distinguishes "user closed the window" (hide to tray) from "user chose Quit"
+// (actually exit). See the window 'close' handler.
+let isQuitting = false;
+
+// Tray icon (accent-purple disc), embedded as a data URL so there's no asset
+// file to resolve inside the asar at runtime.
+const TRAY_ICON =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA5ElEQVR4nM2XsQ3EIAxFU7ACK9wu7II3MEtlBmbIDKm9wEWRjMQRwiEEmOI3UeA/bANmQ6BNUi2DNAIZBLII5FiWv+lRAIpNPAJ9/8jzv6oXwD3ZWWGc6uSxzQB3OPcG41R7KTVv5h8EOjqYBx08ZxWA7mweQzwikQPoEfZSOooAdqB5kH0DUI3V3rI7VA5gxuofUYgBag6ZXvIpgJ5oHqRjACMAYGKAmfn/qYMA4AQA3FIA4ikQL0LxbSh+EC1xFItfRuLX8RINyRItmXhTukRbnhamyMMk3aJiT7NcaqY/TofpAiUp/hhph2gUAAAAAElFTkSuQmCC";
 
 // --- Which server to load ---
 //
@@ -100,8 +109,43 @@ function createWindow() {
     },
   });
   mainWindow = win;
+
+  // Closing the window hides it to the tray rather than quitting: the web app
+  // (and its signaling connection) keeps running in the hidden renderer, so the
+  // user stays online and incoming transfers still arrive. Only Quit, which
+  // sets isQuitting, actually tears the app down.
+  win.on("close", (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
+
   loadStart(win);
   return win;
+}
+
+function showWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  const icon = nativeImage.createFromDataURL(TRAY_ICON);
+  tray = new Tray(icon);
+  tray.setToolTip("RivuletSend — running in the background");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open RivuletSend", click: showWindow },
+      { label: "Switch server…", click: () => mainWindow && loadSetup(mainWindow) },
+      { type: "separator" },
+      { label: "Quit", click: () => { isQuitting = true; app.quit(); } },
+    ]),
+  );
+  // Windows/Linux convention: a plain click on the tray icon opens the window.
+  tray.on("click", showWindow);
 }
 
 function buildMenu() {
@@ -126,12 +170,32 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.whenReady().then(() => {
-  buildMenu();
-  createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// A single instance only: relaunching the exe while it's in the tray should
+// surface the existing window, not start a second app (two presences, two
+// sessions). The lock is keyed on the user-data dir, so the e2e tests — each
+// with its own --user-data-dir — are unaffected.
+if (!app.requestSingleInstanceLock()) {
+  isQuitting = true;
+  app.quit();
+} else {
+  app.on("second-instance", showWindow);
+
+  app.whenReady().then(() => {
+    buildMenu();
+    createTray();
+    createWindow();
+    app.on("activate", () => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) showWindow();
+      else createWindow();
+    });
   });
+}
+
+// Fires on app.quit() (menu Quit, Ctrl+Q, or the tray). Marks the shutdown as
+// real so the window 'close' handler stops hiding and lets the app exit.
+app.on("before-quit", () => {
+  isQuitting = true;
 });
 
 // --- Server selection IPC (used by setup.html) ---
@@ -158,7 +222,10 @@ ipcMain.handle("server:set", (event, url) => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  // The window hides rather than closes, so this normally never fires — the app
+  // lives on in the tray. It only fires during a real Quit, where exiting is
+  // exactly what we want.
+  if (isQuitting && process.platform !== "darwin") app.quit();
 });
 
 // --- Auto-save config (desktop-local, NOT synced to the account: someone may
