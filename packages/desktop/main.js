@@ -87,6 +87,36 @@ function loadSetup(win) {
   win.loadFile(path.join(__dirname, "setup.html"));
 }
 
+// --- Start at login (Windows registry Run entry) ---
+
+// A portable build runs from a temp extraction directory, so app.getPath("exe")
+// changes every launch and would register a dead path. electron-builder exposes
+// the real launcher location for portable builds; fall back to the exe path for
+// an installed one.
+function loginItemPath() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || app.getPath("exe");
+}
+
+// Registered with an explicit path + args, so the query has to match BOTH to
+// read the state back — on Windows getLoginItemSettings compares the launch
+// command, not just "is something registered". Keep this in sync with the set.
+const LOGIN_ITEM_ARGS = ["--hidden"]; // start into the tray on boot
+
+function getOpenAtLogin() {
+  return app.getLoginItemSettings({ path: loginItemPath(), args: LOGIN_ITEM_ARGS }).openAtLogin;
+}
+
+function setOpenAtLogin(enabled) {
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    path: loginItemPath(),
+    args: LOGIN_ITEM_ARGS,
+  });
+}
+
+// Set on boot when launched by the login item, so the window starts hidden.
+const startHidden = process.argv.includes("--hidden");
+
 // Pick what to show on launch: env override, then a saved server, else setup.
 function loadStart(win) {
   const override = process.env.RIVULET_URL;
@@ -101,6 +131,7 @@ function createWindow() {
     width: 1120,
     height: 780,
     backgroundColor: "#121214",
+    show: !startHidden, // launched by the login item -> stay in the tray
     autoHideMenuBar: true, // clean chrome; press Alt for the menu
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -140,6 +171,14 @@ function createTray() {
     Menu.buildFromTemplate([
       { label: "Open RivuletSend", click: showWindow },
       { label: "Switch server…", click: () => mainWindow && loadSetup(mainWindow) },
+      { type: "separator" },
+      {
+        label: "Start at login",
+        type: "checkbox",
+        checked: getOpenAtLogin(),
+        // item.checked is the new state — Electron toggles it before firing.
+        click: (item) => setOpenAtLogin(item.checked),
+      },
       { type: "separator" },
       { label: "Quit", click: () => { isQuitting = true; app.quit(); } },
     ]),
