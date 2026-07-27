@@ -17,4 +17,11 @@ contextBridge.exposeInMainWorld("rivulet", {
   autoSaveFile: (arg) => ipcRenderer.invoke("autosave:save-file", arg),
   autoSaveFolder: (arg) => ipcRenderer.invoke("autosave:save-folder", arg),
   showInFolder: (fullPath) => ipcRenderer.invoke("autosave:show-in-folder", fullPath),
+  // Server selection. `set` only takes effect from the local setup page; the
+  // main process rejects it from a remote origin.
+  server: {
+    get: () => ipcRenderer.invoke("server:get"),
+    test: (url) => ipcRenderer.invoke("server:test", url),
+    set: (url) => ipcRenderer.invoke("server:set", url),
+  },
 });

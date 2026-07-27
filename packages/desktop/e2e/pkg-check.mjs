@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 const exe = join(fileURLToPath(new URL("..", import.meta.url)), "dist", "win-unpacked", "Rivulet.exe");
-const app = await electron.launch({ executablePath: exe });
+const app = await electron.launch({
+  executablePath: exe,
+  env: { ...process.env, RIVULET_URL: "http://localhost:5173" },
+});
 try {
   const win = await app.firstWindow();
   await win.waitForLoadState("domcontentloaded");

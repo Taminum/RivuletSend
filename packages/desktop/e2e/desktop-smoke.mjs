@@ -16,7 +16,12 @@ async function main() {
     if (!ok) failures++;
   };
 
-  const app = await electron.launch({ args: [join(desktopDir, "main.js")] });
+  // RIVULET_URL overrides the server picker, so the shell loads the dev web app
+  // directly instead of showing the setup screen.
+  const app = await electron.launch({
+    args: [join(desktopDir, "main.js")],
+    env: { ...process.env, RIVULET_URL: "http://localhost:5173" },
+  });
   const destRoot = mkdtempSync(join(tmpdir(), "rivulet-native-"));
   try {
     const win = await app.firstWindow();

@@ -27,6 +27,7 @@ async function main() {
   // Isolate the config file so we don't touch the real user's autosave.json.
   const app = await electron.launch({
     args: [join(desktopDir, "main.js"), `--user-data-dir=${userData}`],
+    env: { ...process.env, RIVULET_URL: "http://localhost:5173" },
   });
 
   const save = (win, arg) => win.evaluate((a) => window.rivulet.autoSaveFile(a), arg);

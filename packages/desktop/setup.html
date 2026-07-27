@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+    <title>Connect to a server</title>
+    <style>
+      :root {
+        --rs-bg: #121214;
+        --rs-surface: #1c1c20;
+        --rs-border: #232328;
+        --rs-text: #f2f2f4;
+        --rs-muted: #8b8b95;
+        --rs-accent: #7c6df2;
+        --rs-accent-soft: #a599f7;
+        --rs-danger: #e26a5c;
+        --rs-radius-lg: 20px;
+        --rs-radius-md: 14px;
+        --rs-radius-sm: 10px;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--rs-bg);
+        color: var(--rs-text);
+        font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      .card {
+        width: 420px;
+        max-width: calc(100vw - 48px);
+        background: var(--rs-surface);
+        border: 1px solid var(--rs-border);
+        border-radius: var(--rs-radius-lg);
+        padding: 32px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 24px;
+      }
+      .brand .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--rs-accent);
+        box-shadow: 0 0 0 4px rgba(124, 109, 242, 0.18);
+      }
+      .brand .name { font-weight: 600; font-size: 15px; letter-spacing: 0.2px; }
+      h1 { font-size: 20px; margin: 0 0 8px; }
+      p.lead { color: var(--rs-muted); font-size: 13.5px; line-height: 1.5; margin: 0 0 22px; }
+      label { display: block; font-size: 12px; color: var(--rs-muted); margin-bottom: 8px; }
+      .field {
+        display: flex;
+        align-items: center;
+        background: var(--rs-bg);
+        border: 1px solid var(--rs-border);
+        border-radius: var(--rs-radius-md);
+        padding: 0 14px;
+        transition: border-color 0.15s;
+      }
+      .field:focus-within { border-color: var(--rs-accent); }
+      .field input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--rs-text);
+        font-size: 15px;
+        padding: 13px 0;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .field input::placeholder { color: #5c5c66; }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border: none;
+        border-radius: var(--rs-radius-md);
+      }
+      .primary {
+        width: 100%;
+        margin-top: 18px;
+        padding: 13px;
+        background: var(--rs-accent);
+        color: white;
+        font-weight: 600;
+        font-size: 15px;
+        transition: background 0.15s;
+      }
+      .primary:hover:not(:disabled) { background: var(--rs-accent-soft); }
+      .primary:disabled { opacity: 0.6; cursor: default; }
+      .status { margin-top: 16px; font-size: 13px; line-height: 1.45; min-height: 18px; }
+      .status.error { color: var(--rs-danger); }
+      .status.info { color: var(--rs-muted); }
+      .anyway {
+        margin-top: 12px;
+        width: 100%;
+        padding: 11px;
+        background: transparent;
+        color: var(--rs-muted);
+        border: 1px solid var(--rs-border);
+        font-size: 13.5px;
+      }
+      .anyway:hover { color: var(--rs-text); border-color: var(--rs-muted); }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="brand">
+        <span class="dot"></span>
+        <span class="name">RivuletSend</span>
+      </div>
+      <h1>Connect to your server</h1>
+      <p class="lead">
+        Enter the address of the RivuletSend server you deployed. The app loads
+        everything from there. You can change it later from the menu (Alt →
+        Switch server).
+      </p>
+
+      <label for="url">Server address</label>
+      <div class="field">
+        <input
+          id="url"
+          type="text"
+          placeholder="send.example.com"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <button id="connect" class="primary">Connect</button>
+      <div id="status" class="status"></div>
+      <button id="anyway" class="anyway hidden">Connect anyway</button>
+    </div>
+
+    <script>
+      const input = document.getElementById("url");
+      const connectBtn = document.getElementById("connect");
+      const anywayBtn = document.getElementById("anyway");
+      const status = document.getElementById("status");
+
+      function setStatus(text, kind) {
+        status.textContent = text || "";
+        status.className = "status" + (kind ? " " + kind : "");
+      }
+
+      // Prefill with the current server, if one is already saved.
+      (async () => {
+        try {
+          const current = await window.rivulet.server.get();
+          if (current) input.value = current;
+        } catch {}
+        input.focus();
+        input.select();
+      })();
+
+      async function connect() {
+        const value = input.value.trim();
+        if (!value) {
+          setStatus("Enter a server address.", "error");
+          return;
+        }
+        connectBtn.disabled = true;
+        anywayBtn.classList.add("hidden");
+        setStatus("Checking…", "info");
+        let result;
+        try {
+          result = await window.rivulet.server.test(value);
+        } catch {
+          result = { ok: false, error: "Something went wrong checking that address." };
+        }
+        if (result && result.ok) {
+          setStatus("Connected. Loading…", "info");
+          // Navigates the window away from this page.
+          await window.rivulet.server.set(result.url || value);
+          return;
+        }
+        connectBtn.disabled = false;
+        setStatus((result && result.error) || "Could not reach that address.", "error");
+        // Let the user proceed anyway — the check can fail for reasons that
+        // don't stop the app (a server still warming up, a slow network).
+        anywayBtn.classList.remove("hidden");
+      }
+
+      connectBtn.addEventListener("click", connect);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") connect();
+      });
+      anywayBtn.addEventListener("click", async () => {
+        const value = input.value.trim();
+        if (value) await window.rivulet.server.set(value);
+      });
+    </script>
+  </body>
+</html>

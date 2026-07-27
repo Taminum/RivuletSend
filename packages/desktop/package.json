@@ -18,7 +18,7 @@
   "build": {
     "appId": "com.rivuletsend.app",
     "productName": "RivuletSend",
-    "files": ["main.js", "preload.js"],
+    "files": ["main.js", "preload.js", "setup.html"],
     "win": {
       "target": "nsis"
     },

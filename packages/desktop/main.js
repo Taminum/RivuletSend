@@ -3,36 +3,158 @@
 // BrowserWindow unmodified. On top of that we expose native folder IPC so the
 // receiver can write a real folder tree to disk — no File System Access API
 // limits, no zip fallback.
-const { app, BrowserWindow, ipcMain, dialog, Notification, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Notification, shell, Menu } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 
-// Point at the hosted/dev web app for now (fastest). Bundling packages/web's
-// build for offline shell is a later step (needs the API to allow this origin).
-const APP_URL = process.env.RIVULET_URL || "http://localhost:5173";
+let mainWindow = null;
+
+// --- Which server to load ---
+//
+// The desktop app is a thin Chromium shell: it loads the web app straight from
+// a RivuletSend server, and that server's own bundle already knows its API and
+// signaling URLs. So all the user has to choose is one thing — the address of
+// their server. It's stored here and can be changed from the menu later.
+//
+// RIVULET_URL overrides everything, for development and the e2e tests.
+
+function serverConfigPath() {
+  return path.join(app.getPath("userData"), "server.json");
+}
+
+function readServerUrl() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(serverConfigPath(), "utf8"));
+    return typeof parsed.url === "string" && parsed.url ? parsed.url : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeServerUrl(url) {
+  fs.writeFileSync(serverConfigPath(), JSON.stringify({ url }, null, 2));
+}
+
+// Turn user input into a bare origin: assume https when no scheme is given,
+// drop any path/trailing slash. Returns null if it isn't a valid http(s) URL.
+function normalizeServerUrl(input) {
+  let s = String(input || "").trim();
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+// Confirm an address is actually a RivuletSend server before committing to it,
+// so a typo lands on a clear message instead of a blank window.
+async function testServer(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const res = await fetch(`${url}/api/health`, { signal: controller.signal });
+    if (!res.ok) return { ok: false, error: `Server responded with ${res.status}.` };
+    const body = await res.json().catch(() => null);
+    if (!body || body.status !== "ok") {
+      return { ok: false, error: "That address answered, but it isn't a RivuletSend server." };
+    }
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e && e.name === "AbortError" ? "Timed out reaching the server." : "Could not reach that address.",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function loadSetup(win) {
+  win.loadFile(path.join(__dirname, "setup.html"));
+}
+
+// Pick what to show on launch: env override, then a saved server, else setup.
+function loadStart(win) {
+  const override = process.env.RIVULET_URL;
+  if (override) return win.loadURL(override);
+  const saved = readServerUrl();
+  if (saved) return win.loadURL(saved);
+  loadSetup(win);
+}
 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1120,
     height: 780,
-    backgroundColor: "#0a0d0c",
+    backgroundColor: "#121214",
+    autoHideMenuBar: true, // clean chrome; press Alt for the menu
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  win.removeMenu();
-  win.loadURL(APP_URL);
+  mainWindow = win;
+  loadStart(win);
   return win;
 }
 
+function buildMenu() {
+  const template = [
+    {
+      label: "RivuletSend",
+      submenu: [
+        {
+          label: "Switch server…",
+          accelerator: "CmdOrCtrl+Shift+O",
+          click: () => mainWindow && loadSetup(mainWindow),
+        },
+        { label: "Reload", accelerator: "CmdOrCtrl+R", click: () => mainWindow && mainWindow.reload() },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    // Clipboard shortcuts, so the address field and the app support copy/paste.
+    { role: "editMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
+  buildMenu();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+// --- Server selection IPC (used by setup.html) ---
+
+ipcMain.handle("server:get", () => readServerUrl());
+
+ipcMain.handle("server:test", async (_event, url) => {
+  const normalized = normalizeServerUrl(url);
+  if (!normalized) return { ok: false, error: "That doesn't look like a valid address." };
+  return { ...(await testServer(normalized)), url: normalized };
+});
+
+ipcMain.handle("server:set", (event, url) => {
+  // Only the local setup page may redirect the shell. Without this guard a
+  // compromised remote page could silently point the app at an attacker's
+  // server and phish the next sign-in.
+  const from = event.senderFrame && event.senderFrame.url ? event.senderFrame.url : "";
+  if (!from.startsWith("file://")) return { ok: false, error: "not_allowed" };
+  const normalized = normalizeServerUrl(url);
+  if (!normalized) return { ok: false, error: "invalid" };
+  writeServerUrl(normalized);
+  if (mainWindow) mainWindow.loadURL(normalized);
+  return { ok: true, url: normalized };
 });
 
 app.on("window-all-closed", () => {
