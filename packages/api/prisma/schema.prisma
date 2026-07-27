@@ -14,9 +14,12 @@ datasource db {
 model User {
   id           String   @id @default(cuid())
   displayName  String   @map("display_name")
-  // email and telegramId are both nullable: a user may link only one method.
   email        String?  @unique
   passwordHash String?  @map("password_hash")
+  // DEPRECATED: Telegram sign-in was removed. This column is no longer read or
+  // written and is not returned to clients; it's kept for now so no data is
+  // lost, and to be dropped in a later migration once it's confirmed no
+  // Telegram-only (passwordless) accounts still depend on it.
   telegramId   BigInt?  @unique @map("telegram_id")
   // UI accent preset key (e.g. "green", "cobalt"), follows the user across devices.
   accentPreference String? @map("accent_preference")

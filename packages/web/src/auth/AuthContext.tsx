@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type ApiUser, type TelegramAuthData } from "../api";
+import { api, type ApiUser } from "../api";
 import { applyAccent, isAccentKey, type AccentKey } from "../theme";
 
 interface AuthState {
@@ -7,9 +7,6 @@ interface AuthState {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (displayName: string, email: string, password: string) => Promise<void>;
-  loginWithTelegram: (data: TelegramAuthData) => Promise<void>;
-  linkTelegram: (data: TelegramAuthData) => Promise<void>;
-  unlinkTelegram: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -67,21 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(user);
   }, []);
 
-  const loginWithTelegram = useCallback(async (data: TelegramAuthData) => {
-    const { user } = await api.telegramLogin(data);
-    setUser(user);
-  }, []);
-
-  const linkTelegram = useCallback(async (data: TelegramAuthData) => {
-    const { user } = await api.linkTelegram(data);
-    setUser(user);
-  }, []);
-
-  const unlinkTelegram = useCallback(async () => {
-    const { user } = await api.unlinkTelegram();
-    setUser(user);
-  }, []);
-
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     await api.changePassword({ currentPassword, newPassword });
   }, []);
@@ -98,9 +80,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         signup,
-        loginWithTelegram,
-        linkTelegram,
-        unlinkTelegram,
         changePassword,
         logout,
         refresh,

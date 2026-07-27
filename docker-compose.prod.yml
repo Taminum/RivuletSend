@@ -35,7 +35,6 @@ services:
       INTERNAL_API_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
       WEB_ORIGIN: https://${RS_DOMAIN:?RS_DOMAIN is required}
       COOKIE_SECURE: "true"
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       # /turn-credentials mints coturn credentials with this secret. It must be
       # the same value coturn runs with, and it must never reach the browser.
       STUN_URL: ${STUN_URL:-stun:stun.l.google.com:19302}
@@ -69,7 +68,6 @@ services:
       args:
         VITE_API_URL: https://${RS_DOMAIN}/api
         VITE_SIGNALING_URL: wss://${RS_DOMAIN}/ws
-        VITE_TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
         VITE_STUN_URL: ${STUN_URL:-stun:stun.l.google.com:19302}
         VITE_TURN_URL: ${TURN_URL:-}
         VITE_TURN_USERNAME: ${TURN_USERNAME:-}

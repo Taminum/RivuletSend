@@ -7,20 +7,8 @@ export interface ApiUser {
   id: string;
   displayName: string;
   email: string | null;
-  telegramId: string | null;
   accentPreference: string | null;
   createdAt: string;
-}
-
-// Shape the Telegram Login Widget passes to its data-onauth callback.
-export interface TelegramAuthData {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
 }
 
 export type ContactStatus = "accepted" | "outgoing" | "incoming";
@@ -92,11 +80,6 @@ export const api = {
   logout: () => req<{ ok: true }>("/auth/logout", { method: "POST" }),
   me: () => req<{ user: ApiUser }>("/auth/me"),
   wsToken: () => req<{ token: string }>("/auth/ws-token"),
-  telegramLogin: (b: TelegramAuthData) =>
-    req<{ user: ApiUser }>("/auth/telegram", { method: "POST", body: JSON.stringify(b) }),
-  linkTelegram: (b: TelegramAuthData) =>
-    req<{ user: ApiUser }>("/auth/link/telegram", { method: "POST", body: JSON.stringify(b) }),
-  unlinkTelegram: () => req<{ user: ApiUser }>("/auth/unlink/telegram", { method: "POST" }),
   changePassword: (b: { currentPassword: string; newPassword: string }) =>
     req<{ ok: true }>("/auth/password", { method: "POST", body: JSON.stringify(b) }),
   setAccent: (accent: string) =>

@@ -737,12 +737,6 @@ textarea.input {
   background: var(--border);
 }
 
-.tg-wrap {
-  display: flex;
-  justify-content: center;
-  min-height: 40px;
-}
-
 .header-status {
   display: flex;
   align-items: center;

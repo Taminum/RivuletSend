@@ -35,9 +35,6 @@ services:
       INTERNAL_API_SECRET: local-docker-internal-secret
       WEB_ORIGIN: http://localhost:5173
       COOKIE_SECURE: "false"
-      # To enable Telegram login, set your bot token here (and the bot username
-      # as a web build arg below):
-      # TELEGRAM_BOT_TOKEN: "123456:ABC-..."
     ports:
       - "8081:8081"
     depends_on:
@@ -67,7 +64,6 @@ services:
       args:
         VITE_API_URL: http://localhost:8081
         VITE_SIGNALING_URL: ws://localhost:8080
-        # VITE_TELEGRAM_BOT_USERNAME: your_bot
     ports:
       - "5173:80"
     depends_on:

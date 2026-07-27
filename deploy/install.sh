@@ -17,8 +17,6 @@ BRANCH="${RS_BRANCH:-master}"
 INSTALL_DIR="${RS_INSTALL_DIR:-/opt/rivuletsend}"
 DOMAIN="${RS_DOMAIN:-}"
 EMAIL="${ACME_EMAIL:-}"
-TELEGRAM_BOT_USERNAME="${TELEGRAM_BOT_USERNAME:-}"
-TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TURN_URL="${TURN_URL:-}"
 TURN_USERNAME="${TURN_USERNAME:-}"
 TURN_CREDENTIAL="${TURN_CREDENTIAL:-}"
@@ -47,8 +45,6 @@ transfers fail for peers behind symmetric NAT.
 Optional:
   --dir <path>             Install directory (default: /opt/rivuletsend)
   --branch <name>          Git branch to deploy (default: master)
-  --telegram-bot <name>    Telegram bot username, enables Telegram sign-in
-  --telegram-token <token> Telegram bot token (required with --telegram-bot)
   --public-ip <addr>       Public IP for the relay (default: detected)
   --turn-ports <min-max>   Relay UDP port range (default: 49160-49200)
   --turn-url <url>         Use an EXTERNAL TURN relay instead of installing one
@@ -69,8 +65,6 @@ while [ $# -gt 0 ]; do
     --email) EMAIL="${2:-}"; shift 2 ;;
     --dir) INSTALL_DIR="${2:-}"; shift 2 ;;
     --branch) BRANCH="${2:-}"; shift 2 ;;
-    --telegram-bot) TELEGRAM_BOT_USERNAME="${2:-}"; shift 2 ;;
-    --telegram-token) TELEGRAM_BOT_TOKEN="${2:-}"; shift 2 ;;
     --turn-url) TURN_URL="${2:-}"; shift 2 ;;
     --turn-user) TURN_USERNAME="${2:-}"; shift 2 ;;
     --turn-pass) TURN_CREDENTIAL="${2:-}"; shift 2 ;;
@@ -130,9 +124,6 @@ case "$EMAIL" in
   *@*.*) ;;
   *) die "'$EMAIL' is not an email address" ;;
 esac
-if [ -n "$TELEGRAM_BOT_USERNAME" ] && [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-  die "--telegram-bot needs --telegram-token, or sign-in will always fail"
-fi
 
 # Relay: a local coturn unless an external one was supplied (or TURN refused).
 if [ "$NO_TURN" -eq 1 ]; then
@@ -273,9 +264,6 @@ ACME_EMAIL=$EMAIL
 JWT_SECRET=$JWT_SECRET
 INTERNAL_SECRET=$INTERNAL_SECRET
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-
-TELEGRAM_BOT_USERNAME=$TELEGRAM_BOT_USERNAME
-TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 
 # --- TURN relay ---
 # Empty COMPOSE_PROFILES means no local coturn. If you enable it by hand, make

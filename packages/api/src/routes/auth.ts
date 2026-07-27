@@ -2,10 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
-import { env } from "../env";
 import { parseBody } from "../http";
 import { hashPassword, verifyPassword } from "../auth/password";
-import { verifyTelegramAuth, type TelegramAuthData } from "../auth/telegram";
 import {
   issueSession,
   clearSession,
@@ -22,16 +20,6 @@ const signupSchema = z.object({
 const loginSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(1).max(200),
-});
-
-const telegramSchema = z.object({
-  id: z.number(),
-  first_name: z.string(),
-  last_name: z.string().optional(),
-  username: z.string().optional(),
-  photo_url: z.string().optional(),
-  auth_date: z.number(),
-  hash: z.string(),
 });
 
 const linkPasswordSchema = z.object({
@@ -84,28 +72,6 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ user: serializeUser(user) });
   });
 
-  // --- Telegram Login Widget ---
-  app.post("/auth/telegram", async (request, reply) => {
-    const body = parseBody(telegramSchema, request, reply);
-    if (!body) return;
-    if (!env.TELEGRAM_BOT_TOKEN) {
-      return reply.code(501).send({ error: "telegram_not_configured" });
-    }
-    if (!verifyTelegramAuth(body as TelegramAuthData, env.TELEGRAM_BOT_TOKEN)) {
-      return reply.code(401).send({ error: "invalid_telegram_signature" });
-    }
-
-    const telegramId = BigInt(body.id);
-    const displayName = [body.first_name, body.last_name].filter(Boolean).join(" ") || body.username || "Telegram user";
-    const user = await prisma.user.upsert({
-      where: { telegramId },
-      create: { telegramId, displayName },
-      update: {},
-    });
-    await issueSession(reply, user.id);
-    return reply.send({ user: serializeUser(user) });
-  });
-
   // --- Current user ---
   app.get("/auth/me", { preHandler: requireAuth }, async (request, reply) => {
     const user = await prisma.user.findUnique({ where: { id: request.user.sub } });
@@ -139,19 +105,6 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ ok: true });
   });
 
-  // --- Unlink Telegram (only if another login method remains) ---
-  app.post("/auth/unlink/telegram", { preHandler: requireAuth }, async (request, reply) => {
-    const user = await prisma.user.findUnique({ where: { id: request.user.sub } });
-    if (!user) return reply.code(401).send({ error: "unauthorized" });
-    if (!user.telegramId) return reply.code(400).send({ error: "telegram_not_linked" });
-    if (!user.passwordHash) return reply.code(400).send({ error: "cannot_unlink_only_method" });
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: { telegramId: null },
-    });
-    return reply.send({ user: serializeUser(updated) });
-  });
-
   // --- Accent preference (UI theme), follows the user across devices ---
   app.post("/auth/accent", { preHandler: requireAuth }, async (request, reply) => {
     const body = parseBody(
@@ -181,7 +134,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ token });
   });
 
-  // --- Link email+password to an existing (e.g. Telegram-created) account ---
+  // --- Link email+password to an account that has none (e.g. a legacy
+  // passwordless account) ---
   app.post("/auth/link/password", { preHandler: requireAuth }, async (request, reply) => {
     const body = parseBody(linkPasswordSchema, request, reply);
     if (!body) return;
@@ -199,33 +153,6 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ user: serializeUser(updated) });
     } catch (err) {
       if (isUniqueViolation(err)) return reply.code(409).send({ error: "email_taken" });
-      throw err;
-    }
-  });
-
-  // --- Link Telegram to an existing (e.g. email-created) account ---
-  app.post("/auth/link/telegram", { preHandler: requireAuth }, async (request, reply) => {
-    const body = parseBody(telegramSchema, request, reply);
-    if (!body) return;
-    if (!env.TELEGRAM_BOT_TOKEN) {
-      return reply.code(501).send({ error: "telegram_not_configured" });
-    }
-    if (!verifyTelegramAuth(body as TelegramAuthData, env.TELEGRAM_BOT_TOKEN)) {
-      return reply.code(401).send({ error: "invalid_telegram_signature" });
-    }
-
-    const user = await prisma.user.findUnique({ where: { id: request.user.sub } });
-    if (!user) return reply.code(401).send({ error: "unauthorized" });
-    if (user.telegramId) return reply.code(409).send({ error: "telegram_already_linked" });
-
-    try {
-      const updated = await prisma.user.update({
-        where: { id: user.id },
-        data: { telegramId: BigInt(body.id) },
-      });
-      return reply.send({ user: serializeUser(updated) });
-    } catch (err) {
-      if (isUniqueViolation(err)) return reply.code(409).send({ error: "telegram_in_use" });
       throw err;
     }
   });

@@ -60,14 +60,14 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
   }
 }
 
-// Shape returned to clients — never includes passwordHash, and BigInt telegramId
-// is stringified (BigInt isn't JSON-serializable).
+// Shape returned to clients — never includes passwordHash. The telegram_id
+// column is deprecated (Telegram sign-in was removed) and intentionally left
+// out of the response; the column still exists but is no longer surfaced.
 export function serializeUser(user: User) {
   return {
     id: user.id,
     displayName: user.displayName,
     email: user.email,
-    telegramId: user.telegramId?.toString() ?? null,
     accentPreference: user.accentPreference,
     createdAt: user.createdAt.toISOString(),
   };

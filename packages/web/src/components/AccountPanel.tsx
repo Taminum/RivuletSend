@@ -1,14 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
-import { ApiError, type TelegramAuthData } from "../api";
-import { TelegramLoginButton, telegramConfigured } from "./TelegramLoginButton";
-
-const LINK_ERRORS: Record<string, string> = {
-  telegram_already_linked: "You've already linked a Telegram account.",
-  telegram_in_use: "That Telegram account is linked to someone else.",
-  invalid_telegram_signature: "Telegram verification failed. Try again.",
-  cannot_unlink_only_method: "Add an email & password before unlinking Telegram.",
-};
+import { ApiError } from "../api";
 
 const PASSWORD_ERRORS: Record<string, string> = {
   wrong_password: "Current password is incorrect.",
@@ -17,8 +9,7 @@ const PASSWORD_ERRORS: Record<string, string> = {
 };
 
 export function AccountPanel() {
-  const { user, linkTelegram, unlinkTelegram, changePassword } = useAuth();
-  const [linkError, setLinkError] = useState<string | null>(null);
+  const { user, changePassword } = useAuth();
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwOk, setPwOk] = useState(false);
   const [current, setCurrent] = useState("");
@@ -28,25 +19,6 @@ export function AccountPanel() {
   if (!user) return null;
 
   const hasPassword = Boolean(user.email); // password is only ever set alongside email
-  const canUnlinkTelegram = Boolean(user.telegramId) && hasPassword;
-
-  async function handleLink(data: TelegramAuthData) {
-    setLinkError(null);
-    try {
-      await linkTelegram(data);
-    } catch (err) {
-      setLinkError(err instanceof ApiError ? (LINK_ERRORS[err.code] ?? "Couldn't link Telegram.") : "Network error.");
-    }
-  }
-
-  async function handleUnlink() {
-    setLinkError(null);
-    try {
-      await unlinkTelegram();
-    } catch (err) {
-      setLinkError(err instanceof ApiError ? (LINK_ERRORS[err.code] ?? "Couldn't unlink.") : "Network error.");
-    }
-  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -76,17 +48,6 @@ export function AccountPanel() {
         <li>
           <span className="account-key">Email</span>
           <span className="account-val">{user.email ?? "not linked"}</span>
-        </li>
-        <li>
-          <span className="account-key">Telegram</span>
-          <span className="account-val row-actions">
-            {user.telegramId ? "linked" : "not linked"}
-            {canUnlinkTelegram && (
-              <button className="link-btn" onClick={() => void handleUnlink()}>
-                unlink
-              </button>
-            )}
-          </span>
         </li>
       </ul>
 
@@ -123,14 +84,6 @@ export function AccountPanel() {
           {pwError && <p className="error">{pwError}</p>}
         </form>
       )}
-
-      {!user.telegramId && telegramConfigured() && (
-        <div style={{ marginTop: 18 }}>
-          <div className="section-label">Link Telegram</div>
-          <TelegramLoginButton onAuth={handleLink} />
-        </div>
-      )}
-      {linkError && <p className="error">{linkError}</p>}
     </div>
   );
 }

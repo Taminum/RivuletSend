@@ -1,15 +1,12 @@
 import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
-import { ApiError, type TelegramAuthData } from "../api";
-import { TelegramLoginButton, telegramConfigured } from "./TelegramLoginButton";
+import { ApiError } from "../api";
 import { PairDeviceScreen } from "./PairDeviceScreen";
 
 const ERROR_MESSAGES: Record<string, string> = {
   email_taken: "That email is already registered. Try signing in.",
   invalid_credentials: "Wrong email or password.",
   invalid_input: "Please check the details you entered.",
-  invalid_telegram_signature: "Telegram sign-in failed. Please try again.",
-  telegram_not_configured: "Telegram sign-in isn't available right now.",
 };
 
 function friendlyError(err: unknown): string {
@@ -18,7 +15,7 @@ function friendlyError(err: unknown): string {
 }
 
 export function AuthScreen({ onCancel }: { onCancel?: () => void }) {
-  const { login, signup, loginWithTelegram } = useAuth();
+  const { login, signup } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [pairing, setPairing] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -42,15 +39,6 @@ export function AuthScreen({ onCancel }: { onCancel?: () => void }) {
       setError(friendlyError(err));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function handleTelegram(user: TelegramAuthData) {
-    setError(null);
-    try {
-      await loginWithTelegram(user);
-    } catch (err) {
-      setError(friendlyError(err));
     }
   }
 
@@ -105,15 +93,6 @@ export function AuthScreen({ onCancel }: { onCancel?: () => void }) {
           {busy ? "…" : isSignup ? "Create account" : "Sign in"}
         </button>
       </form>
-
-      {telegramConfigured() && (
-        <>
-          <div className="divider">or continue with</div>
-          <div className="tg-wrap">
-            <TelegramLoginButton onAuth={handleTelegram} />
-          </div>
-        </>
-      )}
 
       {error && <p className="error">{error}</p>}
 

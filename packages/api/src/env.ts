@@ -20,8 +20,6 @@ const schema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
-  // Bot token used to verify Telegram Login Widget payloads (optional until used).
-  TELEGRAM_BOT_TOKEN: z.string().optional(),
   // Shared secret the signaling server presents to call internal endpoints
   // (e.g. mutual-contact authorization). Must match signaling's INTERNAL_SECRET.
   INTERNAL_API_SECRET: z.string().default("dev-internal-secret"),
