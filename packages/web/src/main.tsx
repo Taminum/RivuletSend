@@ -2,10 +2,15 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 import { applyAccent, storedAccent } from "./theme";
+import { cleanupOrphanedOpfsFiles } from "./opfs/opfsCleanup";
 
 // Apply the saved accent before first paint to avoid a flash of the default.
 // (Logged-in users' account preference is re-applied once /auth/me resolves.)
 applyAccent(storedAccent(), false);
+
+// Sweep OPFS temp files left over from a tab that crashed mid-transfer. Runs
+// once at startup, before any new receive, so nothing currently live is touched.
+void cleanupOrphanedOpfsFiles();
 
 // No StrictMode: the app owns a live WebSocket + RTCPeerConnection created
 // imperatively (and, for scan-to-join, during mount). StrictMode's dev-only

@@ -1,5 +1,17 @@
 import { CHUNK_SIZE, type DataChannelMessage, type ManifestEntry } from "@p2p/shared";
 import { zip } from "fflate";
+import { OpfsWriter, isOpfsSupported, NotEnoughSpaceError } from "./opfs/opfsWriter";
+
+// Route a single incoming file's bytes to OPFS (written on disk in a worker)
+// instead of accumulating them in a growing in-memory ArrayBuffer[]. Gated on
+// the absence of the File System Access API — the browsers without it
+// (Safari/Firefox) are exactly the ones this memory-safety path is for; where
+// FSA exists (Chromium) the existing in-memory path is kept.
+function shouldUseOpfs(): boolean {
+  return (
+    typeof window !== "undefined" && !("showDirectoryPicker" in window) && isOpfsSupported()
+  );
+}
 
 // Pause sending above this many buffered bytes, resume once the channel drains
 // back below the low-water mark. Naive demos that skip this crash the channel
@@ -211,8 +223,15 @@ interface InProgressFile {
   name: string;
   size: number;
   mimeType: string;
-  chunks: ArrayBuffer[];
   received: number;
+  // In-memory accumulation (Chromium / folders / OPFS-unsupported fallback).
+  chunks: ArrayBuffer[];
+  // OPFS path: a promise for the per-file worker-backed writer, plus a chain
+  // that serializes writes so they complete in order and finishFile can await
+  // them all. Absent means the in-memory path is used.
+  writer?: Promise<OpfsWriter>;
+  writeChain: Promise<void>;
+  failed: boolean;
 }
 
 interface FolderContext {
@@ -232,6 +251,7 @@ interface FolderContext {
 export class FileReceiver {
   private files = new Map<string, InProgressFile>();
   private pendingChunkFileId: string | null = null;
+  private pendingChunkSeq = 0;
   private folder: FolderContext | null = null;
 
   onFile: (file: IncomingFile) => void = () => {};
@@ -239,6 +259,8 @@ export class FileReceiver {
   onFolderStart: (s: FolderStart) => void = () => {};
   onFolderProgress: (p: FolderProgress) => void = () => {};
   onFolder: (folder: IncomingFolder) => void = () => {};
+  // Reason is a stable code, e.g. "not_enough_space" or "opfs_write_failed".
+  onError: (id: string, reason: string) => void = () => {};
 
   handleMessage(data: string | ArrayBuffer): void {
     if (typeof data === "string") {
@@ -270,17 +292,37 @@ export class FileReceiver {
         });
         break;
       }
-      case "file-start":
-        this.files.set(message.id, {
+      case "file-start": {
+        const isFolderFile = Boolean(this.folder && this.folder.entryById.has(message.id));
+        const rec: InProgressFile = {
           name: message.name,
           size: message.size,
           mimeType: message.mimeType,
           chunks: [],
           received: 0,
-        });
+          writeChain: Promise.resolve(),
+          failed: false,
+        };
+        // Folders stay in memory (typically many small files); OPFS backs single
+        // large files, where the growing in-memory array was the OOM risk.
+        if (!isFolderFile && shouldUseOpfs()) {
+          rec.writer = OpfsWriter.create(message.id, message.size).catch((err) => {
+            rec.failed = true;
+            this.onError(
+              message.id,
+              err instanceof NotEnoughSpaceError ? "not_enough_space" : "opfs_init_failed",
+            );
+            throw err;
+          });
+          // Don't leave the create() rejection unhandled if no chunk ever chains.
+          void rec.writer.catch(() => {});
+        }
+        this.files.set(message.id, rec);
         break;
+      }
       case "chunk":
         this.pendingChunkFileId = message.id;
+        this.pendingChunkSeq = message.seq;
         break;
       case "file-end":
         this.finishFile(message.id);
@@ -290,14 +332,32 @@ export class FileReceiver {
 
   private handleChunk(data: ArrayBuffer): void {
     const fileId = this.pendingChunkFileId;
+    const seq = this.pendingChunkSeq;
     this.pendingChunkFileId = null;
     if (!fileId) return;
 
     const file = this.files.get(fileId);
-    if (!file) return;
+    if (!file || file.failed) return;
 
-    file.chunks.push(data);
     file.received += data.byteLength;
+
+    if (file.writer) {
+      // Serialize onto the write chain (offset-addressed, so order is by seq
+      // anyway) and await it in finishFile. A failed write fails the file once.
+      file.writeChain = file.writeChain
+        .then(() => file.writer!)
+        .then((w) => w.writeChunk(seq, data))
+        .catch((err) => {
+          if (!file.failed) {
+            file.failed = true;
+            this.onError(fileId, "opfs_write_failed");
+          }
+          throw err;
+        });
+      file.writeChain.catch(() => {}); // no unhandled rejection before finishFile awaits
+    } else {
+      file.chunks.push(data);
+    }
 
     if (this.folder && this.folder.entryById.has(fileId)) {
       this.folder.bytesReceived += data.byteLength;
@@ -311,6 +371,12 @@ export class FileReceiver {
     const file = this.files.get(id);
     if (!file) return;
     this.files.delete(id);
+
+    if (file.writer) {
+      void this.finishOpfsFile(id, file);
+      return;
+    }
+
     const blob = new Blob(file.chunks, { type: file.mimeType });
 
     if (this.folder && this.folder.entryById.has(id)) {
@@ -324,6 +390,22 @@ export class FileReceiver {
     }
 
     this.onFile({ id, name: file.name, size: file.size, mimeType: file.mimeType, blob });
+  }
+
+  // Flush the OPFS worker, then hand back a disk-backed File (streams from disk
+  // on download — no large in-memory allocation). OPFS files are never folder
+  // entries, so there's no folder bookkeeping here.
+  private async finishOpfsFile(id: string, file: InProgressFile): Promise<void> {
+    try {
+      await file.writeChain;
+      const writer = await file.writer!;
+      await writer.finalize();
+      const disk = await writer.getFile(file.mimeType);
+      writer.close();
+      this.onFile({ id, name: file.name, size: file.size, mimeType: file.mimeType, blob: disk });
+    } catch {
+      if (!file.failed) this.onError(id, "opfs_write_failed");
+    }
   }
 
   private emitFolderProgress(): void {

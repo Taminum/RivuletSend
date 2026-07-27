@@ -60,6 +60,12 @@ export class PeerConnection {
     this.receiver.onFolderStart = (s) => this.onFolderStart(s, "receive");
     this.receiver.onFolderProgress = (p) => this.onFolderProgress(p, "receive");
     this.receiver.onFolder = (folder) => this.onIncomingFolder(folder);
+    this.receiver.onError = (_id, reason) =>
+      this.onError(
+        reason === "not_enough_space"
+          ? "Not enough local storage space to receive this file."
+          : "Failed to save the received file to disk.",
+      );
   }
 
   createRoom(): Promise<string> {
