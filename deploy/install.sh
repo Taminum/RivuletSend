@@ -317,6 +317,10 @@ fi
 # --- Build and start ---------------------------------------------------------
 
 bold "Building and starting the stack (first run takes a few minutes)"
+# Disable provenance/SBOM attestations. They are useless for a local deploy and
+# their final "resolving provenance for metadata file" step reaches out to the
+# registry for base-image metadata, where it can hang for a long time.
+export BUILDX_NO_DEFAULT_ATTESTATIONS=1
 docker compose -f docker-compose.prod.yml up -d --build
 
 # --- Verify ------------------------------------------------------------------
