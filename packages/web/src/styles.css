@@ -861,6 +861,11 @@ textarea.input {
   font-variant-numeric: tabular-nums;
 }
 
+.spark {
+  opacity: 0.85;
+  align-self: center;
+}
+
 /* ---------- Contacts ---------- */
 .avatar {
   width: 34px;

@@ -10,17 +10,11 @@ import { ContactMultiSend } from "./ContactMultiSend";
 import { MyDevicesSend } from "./MyDevicesSend";
 import { FolderRow } from "./FolderRow";
 import { PeerBeam } from "./PeerBeam";
+import { TransferSpeedometer } from "./TransferSpeedometer";
 import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon } from "../icons";
 
 type Mode = "files" | "text";
 type NavTarget = "contacts" | "settings";
-
-function formatEta(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${String(s % 60).padStart(2, "0")}s`;
-}
 
 export function SendView({
   mode,
@@ -122,10 +116,12 @@ export function SendView({
     const inFlight = transfers.filter(
       (t) => t.direction === "send" && t.size > 0 && t.transferred < t.size,
     );
-    const totalSpeed = inFlight.reduce((s, t) => s + (t.speed ?? 0), 0);
+    const anyRate = inFlight.some((t) => t.speed != null);
+    const aggRate = anyRate ? inFlight.reduce((s, t) => s + (t.speed ?? 0), 0) : null;
     const remaining = inFlight.reduce((s, t) => s + (t.size - t.transferred), 0);
-    const etaSeconds = totalSpeed > 0 ? remaining / totalSpeed : null;
-    const showSpeed = connected && !allDone && inFlight.length > 0 && totalSpeed > 0;
+    const etaSeconds = aggRate && aggRate > 0 ? remaining / aggRate : null;
+    const rateHistory = inFlight[0]?.rateHistory;
+    const showSpeed = connected && !allDone && inFlight.length > 0;
 
     return (
       <div className="view">
@@ -164,12 +160,7 @@ export function SendView({
         </div>
 
         {showSpeed && (
-          <div className="card speed-card">
-            <div className="speed-val">{formatBytes(totalSpeed)}/s</div>
-            {etaSeconds != null && (
-              <div className="speed-eta">~{formatEta(etaSeconds)} left</div>
-            )}
-          </div>
+          <TransferSpeedometer rate={aggRate} etaSeconds={etaSeconds} history={rateHistory} />
         )}
 
         <div className="card">

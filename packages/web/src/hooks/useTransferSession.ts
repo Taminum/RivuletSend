@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PeerConnection } from "../peer";
+import { SpeedTracker } from "../speedTracker";
 import type { FolderEntry } from "../fileTransfer";
 import {
   failureReasonText,
@@ -25,41 +26,37 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
   const [folders, setFolders] = useState<FolderTransfer[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Per-transfer speed samples (bytes/time/EMA), for the live speed + ETA.
-  const speedRef = useRef<Map<string, { bytes: number; time: number; ema: number }>>(new Map());
+  // Per-transfer rolling-window speed trackers, for the live speed + ETA + sparkline.
+  const trackerRef = useRef<Map<string, SpeedTracker>>(new Map());
 
   const upsert = useCallback((id: string, update: Partial<Transfer> & Pick<Transfer, "id">) => {
+    // Sample the tracker outside the state updater (it mutates), then fold the
+    // smoothed rate/ETA/history into the transfer.
+    let rate: number | null = null;
+    let history: number[] | undefined;
+    if (typeof update.transferred === "number") {
+      let tracker = trackerRef.current.get(id);
+      if (!tracker) {
+        tracker = new SpeedTracker();
+        trackerRef.current.set(id, tracker);
+      }
+      rate = tracker.sample(update.transferred);
+      history = tracker.history.slice();
+    }
+
     setTransfers((prev) => {
       const existing = prev.find((t) => t.id === id);
       const merged: Transfer = existing
         ? { ...existing, ...update }
         : { direction: "send", name: "", size: 0, transferred: 0, ...update, id };
 
-      // Live speed + ETA from sampled progress deltas (~150ms window, EMA-smoothed).
       if (typeof update.transferred === "number") {
-        const now = performance.now();
-        const s = speedRef.current.get(id);
-        if (!s) {
-          speedRef.current.set(id, { bytes: update.transferred, time: now, ema: 0 });
-          merged.speed = existing?.speed;
-          merged.etaSeconds = existing?.etaSeconds;
-        } else {
-          const dt = (now - s.time) / 1000;
-          const db = update.transferred - s.bytes;
-          if (dt >= 0.15 && db >= 0) {
-            const inst = db / dt;
-            const ema = s.ema > 0 ? s.ema * 0.7 + inst * 0.3 : inst;
-            s.time = now;
-            s.bytes = update.transferred;
-            s.ema = ema;
-            merged.speed = ema;
-            merged.etaSeconds =
-              ema > 0 && merged.size > 0 ? Math.max(0, (merged.size - merged.transferred) / ema) : undefined;
-          } else {
-            merged.speed = existing?.speed;
-            merged.etaSeconds = existing?.etaSeconds;
-          }
-        }
+        merged.speed = rate ?? undefined; // undefined while calibrating
+        merged.rateHistory = history;
+        merged.etaSeconds =
+          rate != null && rate > 0 && merged.size > 0
+            ? Math.max(0, (merged.size - merged.transferred) / rate)
+            : undefined;
       }
 
       if (existing) return prev.map((t) => (t.id === id ? merged : t));
@@ -101,6 +98,9 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
       // over the live channel (headless WebRTC can't be network-partitioned).
       if (import.meta.env.DEV) (window as unknown as { __peer?: PeerConnection }).__peer = peer;
       peer.onConnected = () => setConnected(true);
+      // On a same-session reconnect, drop the pre-disconnect rate samples so the
+      // speedometer recalibrates instead of showing a stale number.
+      peer.onReconnected = () => trackerRef.current.forEach((tr) => tr.reset());
       peer.onDisconnected = (reason) => {
         setConnected(false);
         // Any send still in flight failed — record it with the reason.
@@ -267,7 +267,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
     peerRef.current?.close();
     peerRef.current = null;
     activeFolder.current = null;
-    speedRef.current.clear();
+    trackerRef.current.clear();
     setConnected(false);
     setTransfers([]);
     setFolders([]);
