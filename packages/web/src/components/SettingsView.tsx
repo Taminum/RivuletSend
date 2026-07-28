@@ -3,6 +3,7 @@ import { AuthScreen } from "./AuthScreen";
 import { AccountPanel } from "./AccountPanel";
 import { AccentPicker } from "./AccentPicker";
 import { DisplaySettings } from "./DisplaySettings";
+import { NotificationsSettings } from "./NotificationsSettings";
 import { AutoSaveSettings } from "./AutoSaveSettings";
 import { PairedDevices } from "./PairedDevices";
 
@@ -13,6 +14,7 @@ export function SettingsView() {
     <div className="view">
       <AccentPicker />
       <DisplaySettings />
+      <NotificationsSettings />
       <AutoSaveSettings />
       {user ? (
         <>

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PeerConnection } from "../peer";
 import { SpeedTracker } from "../speedTracker";
+import { notifyTransferComplete } from "../notifications";
+import { formatBytes } from "../format";
 import type { FolderEntry } from "../fileTransfer";
 import {
   failureReasonText,
@@ -173,6 +175,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
           counterpartUserId: null,
           status: "completed",
         });
+        notifyTransferComplete(file.name, formatBytes(file.size));
       };
       peer.onFolderStart = (start, direction) => {
         upsertFolder(start.folderId, {
@@ -220,6 +223,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
       };
       peer.onIncomingFolder = (folder) => {
         upsertFolder(folder.folderId, { folderId: folder.folderId, done: true, incoming: folder });
+        notifyTransferComplete(`${folder.folderName}/`, `${folder.files.length} files`);
       };
       peerRef.current = peer;
     }
