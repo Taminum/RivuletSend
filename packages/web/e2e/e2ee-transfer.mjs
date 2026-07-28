@@ -20,6 +20,8 @@ writeFileSync(filePath, bytes);
 const expectedHash = createHash("sha256").update(bytes).digest("hex");
 
 async function send(sender, passphrase) {
+  // Passphrase now lives behind the collapsed "Advanced options" disclosure.
+  await sender.getByRole("button", { name: /Advanced options/ }).click();
   await sender.locator("#passphrase").fill(passphrase);
   await sender.locator('input[type="file"]:not([webkitdirectory])').setInputFiles(filePath);
   return (await sender.locator(".share-code.big").textContent({ timeout: 10000 })).trim();

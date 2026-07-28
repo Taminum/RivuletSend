@@ -158,3 +158,30 @@ export const CameraIcon = ({ size, className }: IconProps) =>
     size,
     className,
   );
+
+export const LockIcon = ({ size, className }: IconProps) =>
+  svg(
+    <>
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </>,
+    size,
+    className,
+  );
+
+export const InfinityIcon = ({ size, className }: IconProps) =>
+  svg(
+    <path d="M6 16c-2.2 0-4-1.8-4-4s1.8-4 4-4c3 0 5 8 8 8 2.2 0 4-1.8 4-4s-1.8-4-4-4c-3 0-5 8-8 8Z" />,
+    size,
+    className,
+  );
+
+export const DeviceIcon = ({ size, className }: IconProps) =>
+  svg(
+    <>
+      <rect x="2" y="4" width="20" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </>,
+    size,
+    className,
+  );

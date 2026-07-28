@@ -25,7 +25,9 @@ async function main() {
     const sender = await ctx.newPage();
     await sender.goto(WEB);
 
-    // Create a one-shot (burn-after-read) link.
+    // Create a one-shot (burn-after-read) link. The checkbox is behind the
+    // collapsed "Advanced options" disclosure.
+    await sender.getByRole("button", { name: /Advanced options/ }).click();
     await sender.locator(".burn-check input[type=checkbox]").check();
     await sender.locator('input[type="file"]:not([webkitdirectory])').setInputFiles(file);
     const code = (await sender.locator(".share-code.big").textContent({ timeout: 10000 })).trim();

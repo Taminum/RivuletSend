@@ -8,9 +8,10 @@ import { SendIcon, FolderIcon } from "../icons";
 // Send files straight to one of my own paired devices (e.g. my Windows client),
 // no code and no confirmation — only that the device is online. This is the
 // point of pairing: fling a file to my other machine.
-export function MyDevicesSend() {
+export function MyDevicesSend({ onManage }: { onManage?: () => void } = {}) {
   const { isDeviceOnline, sendToDevice, sendFolderToDevice, callStatus } = usePresence();
   const [devices, setDevices] = useState<ApiDevice[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const targetRef = useRef<string | null>(null);
@@ -20,7 +21,9 @@ export function MyDevicesSend() {
       const { devices } = await api.listDevices();
       setDevices(devices);
     } catch {
-      /* not signed in / offline — render nothing */
+      /* not signed in / offline */
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -30,7 +33,27 @@ export function MyDevicesSend() {
 
   // Other devices than this one (never send to myself).
   const others = devices.filter((d) => !d.isCurrent);
-  if (others.length === 0) return null;
+
+  // Sensible empty state rather than a blank/absent card.
+  if (loaded && others.length === 0) {
+    return (
+      <div className="card">
+        <div className="panel-title">Your devices</div>
+        <p className="muted" style={{ margin: 0 }}>
+          No devices paired yet —{" "}
+          {onManage ? (
+            <button className="linklike" onClick={onManage}>
+              link one in Settings
+            </button>
+          ) : (
+            "link one in Settings"
+          )}
+          .
+        </p>
+      </div>
+    );
+  }
+  if (others.length === 0) return null; // still loading
 
   function pickFilesFor(deviceId: string) {
     targetRef.current = deviceId;
@@ -71,7 +94,7 @@ export function MyDevicesSend() {
         {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
         onChange={onFolderChosen}
       />
-      <div className="panel-title">My devices</div>
+      <div className="panel-title">Your devices</div>
       <p className="muted" style={{ marginTop: -6, marginBottom: 12 }}>
         Send straight to your own paired devices — no code, no confirmation.
       </p>

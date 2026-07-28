@@ -1250,6 +1250,187 @@ textarea.input {
   display: block;
 }
 
+/* ---------- Send: two-column layout ---------- */
+.send-2col {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  max-width: 960px;
+}
+
+.send-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.send-side {
+  width: 250px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The one-time code is sized for the wide left column; shrink it to fit the
+   narrow right column when a guest's share card lives there. */
+.send-side .share-code.big {
+  font-size: 25px;
+  letter-spacing: 0.1em;
+}
+
+/* Below this width, stack the side column under the main one. */
+@media (max-width: 900px) {
+  .send-2col {
+    flex-direction: column;
+  }
+  .send-side {
+    width: 100%;
+  }
+}
+
+/* Advanced-options disclosure */
+.adv {
+  border: 1px solid var(--rs-border);
+  border-radius: var(--rs-radius-md);
+  overflow: hidden;
+}
+
+.adv-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--rs-text-muted);
+  text-align: left;
+}
+
+.adv-toggle:hover {
+  color: var(--rs-text);
+  background: var(--surface-2);
+}
+
+.adv-body {
+  padding: 0 14px 16px;
+  border-top: 1px solid var(--rs-border);
+}
+
+.adv-body .section-label {
+  margin-top: 14px;
+}
+
+/* Trust panel (guest, pre-drop) */
+.trust-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.trust-list li {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.trust-ico {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rs-accent-dim);
+  color: var(--rs-accent-soft);
+}
+
+.trust-list b {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.trust-list .muted {
+  font-size: 12.5px;
+}
+
+/* Recent activity strip */
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.recent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recent-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.recent-name svg {
+  flex-shrink: 0;
+  color: var(--rs-text-muted);
+}
+
+.recent-sub {
+  font-size: 11.5px;
+  color: var(--rs-text-faint);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.recent-sub.failed {
+  color: var(--rs-danger);
+}
+
+.recent-track {
+  height: 4px;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.recent-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--rs-accent), var(--rs-amber));
+  border-radius: 999px;
+  transition: width 0.1s linear;
+}
+
+.recent-empty {
+  font-size: 12.5px;
+  margin: 0;
+}
+
 .preview-text {
   width: 100%;
   margin: 0;
