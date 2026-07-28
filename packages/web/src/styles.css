@@ -612,6 +612,26 @@ textarea.input {
   border-radius: var(--radius);
 }
 
+/* ---------- Compact list density (single root toggle) ---------- */
+:root.compact .file-list {
+  gap: 5px;
+}
+
+:root.compact .file-row {
+  padding: 6px 10px;
+  gap: 9px;
+}
+
+:root.compact .account-list li {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+:root.compact .ft-row {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
 .file-icon {
   color: var(--text-dim);
   flex-shrink: 0;
