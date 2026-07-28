@@ -5,13 +5,21 @@ import { XIcon, CopyIcon, CheckIcon, ReceiveIcon } from "../icons";
 
 const TEXT_EXT = /\.(txt|md|markdown|json|csv|log|xml|ya?ml|ini|conf|sh|js|ts|css|html?)$/i;
 
-type Kind = "image" | "text" | "pdf" | "none";
+type Kind = "image" | "video" | "audio" | "text" | "pdf" | "none";
 
 function kindOf(t: Transfer): Kind {
-  const mime = t.mimeType ?? "";
+  const mime = (t.mimeType ?? "").toLowerCase();
+  const name = t.name.toLowerCase();
+  // SVG is effectively active content — it can carry an embedded <script> — so
+  // it is never rendered as an image/preview despite the image/* MIME type.
+  if (mime === "image/svg+xml" || name.endsWith(".svg")) return "none";
   if (mime.startsWith("image/")) return "image";
-  if (mime === "application/pdf" || t.name.toLowerCase().endsWith(".pdf")) return "pdf";
-  if (mime.startsWith("text/") || TEXT_EXT.test(t.name)) return "text";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  // Text renders as escaped plain text (never dangerouslySetInnerHTML), so
+  // even .html here is shown as source, not executed.
+  if (mime.startsWith("text/") || TEXT_EXT.test(name)) return "text";
   return "none";
 }
 
@@ -70,6 +78,12 @@ export function FilePreview({ transfer, onClose }: { transfer: Transfer; onClose
         <div className="modal-body">
           {kind === "image" && transfer.url && (
             <img className="preview-image" src={transfer.url} alt={transfer.name} />
+          )}
+          {kind === "video" && transfer.url && (
+            <video className="preview-media" src={transfer.url} controls />
+          )}
+          {kind === "audio" && transfer.url && (
+            <audio className="preview-media preview-audio" src={transfer.url} controls />
           )}
           {kind === "pdf" && transfer.url && (
             <iframe className="preview-pdf" src={transfer.url} title={transfer.name} />

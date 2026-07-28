@@ -1183,6 +1183,19 @@ textarea.input {
   background: #fff;
 }
 
+.preview-media {
+  max-width: 100%;
+  max-height: 68vh;
+  border-radius: var(--radius);
+  display: block;
+  margin: 0 auto;
+}
+
+.preview-audio {
+  width: 100%;
+  height: 46px;
+}
+
 .preview-text {
   width: 100%;
   margin: 0;
