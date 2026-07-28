@@ -98,6 +98,35 @@ export function decryptChunk(
   );
 }
 
+// Reserved seq for the filename's IV/AAD, distinct from any data chunk's seq
+// (buildIv can't take a negative "seq -1", so the top of the safe-integer range
+// serves as the same never-collides sentinel). A file can never have this many
+// chunks, so the filename's (key, IV) pair is always unique.
+export const NAME_SEQ = Number.MAX_SAFE_INTEGER;
+
+// Encrypt a UTF-8 filename to base64 ciphertext, bound to this transfer just
+// like a chunk — so "encrypted" covers the name too, not only the bytes.
+export async function encryptName(
+  key: CryptoKey,
+  name: string,
+  nonce: Uint8Array,
+  transferId: string,
+): Promise<string> {
+  const pt = new TextEncoder().encode(name);
+  const ct = await encryptChunk(key, pt.buffer as ArrayBuffer, buildIv(nonce, NAME_SEQ), buildAad(transferId, NAME_SEQ));
+  return toBase64(new Uint8Array(ct));
+}
+
+export async function decryptName(
+  key: CryptoKey,
+  encName: string,
+  nonce: Uint8Array,
+  transferId: string,
+): Promise<string> {
+  const pt = await decryptChunk(key, fromBase64(encName).buffer as ArrayBuffer, buildIv(nonce, NAME_SEQ), buildAad(transferId, NAME_SEQ));
+  return new TextDecoder().decode(pt);
+}
+
 // --- base64 helpers for putting salt/nonce in JSON control messages ---
 
 export function toBase64(bytes: Uint8Array): string {

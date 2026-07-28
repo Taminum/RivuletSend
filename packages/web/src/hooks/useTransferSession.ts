@@ -12,6 +12,7 @@ import {
 // Receive views. onComplete fires once per finished transfer (for history).
 export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) {
   const peerRef = useRef<PeerConnection | null>(null);
+  const passphraseRef = useRef<string | null>(null);
   const sentNames = useRef<Map<string, string>>(new Map());
   // Sends that have started but not finished — used to record failures on disconnect.
   const activeSends = useRef<Map<string, { name: string; size: number }>>(new Map());
@@ -61,6 +62,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
   const getPeer = useCallback((): PeerConnection => {
     if (!peerRef.current) {
       const peer = new PeerConnection();
+      peer.setPassphrase(passphraseRef.current); // carry any passphrase set before the peer existed
       // Dev/e2e only: lets the reconnect-resume test drive the resume protocol
       // over the live channel (headless WebRTC can't be network-partitioned).
       if (import.meta.env.DEV) (window as unknown as { __peer?: PeerConnection }).__peer = peer;
@@ -239,5 +241,12 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
 
   useEffect(() => () => peerRef.current?.close(), []);
 
-  return { connected, transfers, folders, error, setError, createRoom, joinRoom, sendFiles, sendFolder, reset };
+  // Set the E2EE passphrase (never transmitted). Applies to the live peer and
+  // is remembered for a peer created later.
+  const setPassphrase = useCallback((passphrase: string | null) => {
+    passphraseRef.current = passphrase || null;
+    peerRef.current?.setPassphrase(passphraseRef.current);
+  }, []);
+
+  return { connected, transfers, folders, error, setError, createRoom, joinRoom, sendFiles, sendFolder, reset, setPassphrase };
 }

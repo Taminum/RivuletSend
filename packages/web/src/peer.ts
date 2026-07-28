@@ -4,11 +4,13 @@ import type {
   CallFailureReason,
   DataChannelMessage,
 } from "@p2p/shared";
+import { randomSalt, randomNonce, deriveKey, encryptName, toBase64 } from "@p2p/shared";
 import {
   FileReceiver,
   sendFolder as sendFolderOverChannel,
   streamFileBody,
   sendControl,
+  type StreamCrypto,
   type IncomingFile,
   type IncomingFolder,
   type FolderEntry,
@@ -34,6 +36,7 @@ interface ActiveSend {
   nextSeq: number;
   aborter: AbortController;
   ackedSeq: number;
+  crypto?: StreamCrypto;
   resolve: () => void;
   reject: (err: Error) => void;
 }
@@ -55,6 +58,16 @@ export class PeerConnection {
   private reconnecting = false;
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
   private activeSend: ActiveSend | null = null;
+  // Out-of-band E2EE passphrase. Applies to single-file sends (encrypt) and to
+  // receiving an encrypted transfer (decrypt). null = no application-layer
+  // encryption (DTLS still applies).
+  private passphrase: string | null = null;
+
+  // Set the E2EE passphrase for both roles. Never transmitted anywhere.
+  setPassphrase(passphrase: string | null): void {
+    this.passphrase = passphrase || null;
+    this.receiver.setPassphrase(this.passphrase);
+  }
 
   onConnected: () => void = () => {};
   onDisconnected: (reason?: string) => void = () => {};
@@ -87,12 +100,14 @@ export class PeerConnection {
     this.receiver.onFolderStart = (s) => this.onFolderStart(s, "receive");
     this.receiver.onFolderProgress = (p) => this.onFolderProgress(p, "receive");
     this.receiver.onFolder = (folder) => this.onIncomingFolder(folder);
-    this.receiver.onError = (_id, reason) =>
-      this.onError(
-        reason === "not_enough_space"
-          ? "Not enough local storage space to receive this file."
-          : "Failed to save the received file to disk.",
-      );
+    this.receiver.onError = (_id, reason) => {
+      const messages: Record<string, string> = {
+        not_enough_space: "Not enough local storage space to receive this file.",
+        passphrase_required: "This transfer is encrypted — enter the sender's passphrase to receive it.",
+        bad_passphrase: "Incorrect passphrase.",
+      };
+      this.onError(messages[reason] ?? "Failed to save the received file to disk.");
+    };
     // Receiver sends chunk-acks / resume-requests back over the data channel.
     this.receiver.onSendControl = (msg) => this.sendChannelControl(msg);
   }
@@ -173,22 +188,47 @@ export class PeerConnection {
   }
 
   // Resumable single-file send. Resolves when the file fully arrives (across any
-  // reconnects), rejects if the connection is lost past the grace window.
-  sendFile(file: File): Promise<void> {
+  // reconnects), rejects if the connection is lost past the grace window. When a
+  // passphrase is set, the chunks and filename are E2E-encrypted first.
+  async sendFile(file: File): Promise<void> {
     if (!this.channel || this.channel.readyState !== "open") {
-      return Promise.reject(new Error("No open peer connection to send over"));
+      throw new Error("No open peer connection to send over");
     }
     const id = crypto.randomUUID();
+
+    let sendCrypto: StreamCrypto | undefined;
+    let encName: string | undefined;
+    let header: { salt: string; nonce: string } | undefined;
+    if (this.passphrase) {
+      const salt = randomSalt();
+      const nonce = randomNonce();
+      const key = await deriveKey(this.passphrase, salt);
+      encName = await encryptName(key, file.name, nonce, id);
+      header = { salt: toBase64(salt), nonce: toBase64(nonce) };
+      sendCrypto = { key, nonce };
+    }
+
     this.onSendStart({ id, name: file.name, size: file.size });
     sendControl(this.channel, {
       type: "file-start",
       id,
-      name: file.name,
+      name: sendCrypto ? "" : file.name, // real name travels encrypted in encName
       size: file.size,
       mimeType: file.type || "application/octet-stream",
+      encName,
+      crypto: header,
     });
     return new Promise<void>((resolve, reject) => {
-      this.activeSend = { id, file, nextSeq: 0, aborter: new AbortController(), ackedSeq: -1, resolve, reject };
+      this.activeSend = {
+        id,
+        file,
+        nextSeq: 0,
+        aborter: new AbortController(),
+        ackedSeq: -1,
+        crypto: sendCrypto,
+        resolve,
+        reject,
+      };
       void this.pumpSend();
     });
   }
@@ -201,7 +241,7 @@ export class PeerConnection {
       s.id,
       s.file,
       (sent) => this.onSendProgress({ id: s.id, sent, total: s.file.size }),
-      { startSeq: s.nextSeq, signal: s.aborter.signal },
+      { startSeq: s.nextSeq, signal: s.aborter.signal, crypto: s.crypto },
     );
     if (this.activeSend !== s) return; // superseded (failed / replaced)
     if (result.completed) {

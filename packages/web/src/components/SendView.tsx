@@ -25,7 +25,7 @@ export function SendView({
   onNavigate?: (view: NavTarget) => void;
 }) {
   const { user } = useAuth();
-  const { connected, transfers, folders, error, createRoom, sendFiles, sendFolder, reset } =
+  const { connected, transfers, folders, error, createRoom, sendFiles, sendFolder, reset, setPassphrase } =
     useTransferSession(onComplete);
   const [code, setCode] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -33,6 +33,12 @@ export function SendView({
   const [text, setText] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [passphrase, setPassphraseInput] = useState("");
+
+  // Push the passphrase down to the session (never sent over the wire).
+  useEffect(() => {
+    setPassphrase(passphrase.trim() || null);
+  }, [passphrase, setPassphrase]);
   const pendingRef = useRef<File[]>([]);
   const pendingFolderRef = useRef<FolderSelection | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -261,6 +267,26 @@ export function SendView({
             send a folder
           </a>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <label className="section-label" htmlFor="passphrase">
+          Encrypt with a passphrase (optional)
+        </label>
+        <input
+          id="passphrase"
+          className="input"
+          type="text"
+          autoComplete="off"
+          placeholder="Leave blank for none"
+          value={passphrase}
+          onChange={(e) => setPassphraseInput(e.target.value)}
+        />
+        <p className="muted" style={{ marginTop: 8, fontSize: 12.5 }}>
+          End-to-end encrypts the file and its name. Tell the recipient the passphrase through a{" "}
+          <strong>different channel</strong> — sending it with the code defeats the purpose. Applies to
+          single files (not folders).
+        </p>
       </div>
 
       {/* Hidden pickers live OUTSIDE the dropzone on purpose: clicking one

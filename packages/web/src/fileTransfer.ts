@@ -1,4 +1,15 @@
-import { CHUNK_SIZE, type DataChannelMessage, type ManifestEntry } from "@p2p/shared";
+import {
+  CHUNK_SIZE,
+  type DataChannelMessage,
+  type ManifestEntry,
+  encryptChunk,
+  decryptChunk,
+  buildIv,
+  buildAad,
+  deriveKey,
+  decryptName,
+  fromBase64,
+} from "@p2p/shared";
 import { zip } from "fflate";
 import { OpfsWriter, isOpfsSupported, NotEnoughSpaceError } from "./opfs/opfsWriter";
 
@@ -23,6 +34,11 @@ const LOW_WATER_MARK = 1 * 1024 * 1024;
 // to bound how much a reconnect has to re-send, rare enough to add no real
 // overhead.
 const ACK_INTERVAL = 16 * 1024 * 1024;
+
+// AES-GCM appends a 16-byte auth tag, so an encrypted chunk on the wire is
+// exactly this much larger than its plaintext. Used to keep progress in
+// plaintext terms without waiting for the (async) decrypt.
+const GCM_TAG_BYTES = 16;
 
 export interface SendProgress {
   id: string;
@@ -197,31 +213,42 @@ export interface StreamResult {
 // (seeks the File with slice()) and stops early — returning completed:false and
 // the next seq — if opts.signal aborts or the channel dies mid-send. That's what
 // lets a same-session reconnect pick the send back up where it left off.
+// crypto (optional): AES-GCM key + this transfer's 4-byte nonce. When present,
+// each plaintext chunk is encrypted before it leaves. Offsets/seqs stay in
+// PLAINTEXT terms — the ciphertext is just 16 bytes (GCM tag) larger on the wire.
+export interface StreamCrypto {
+  key: CryptoKey;
+  nonce: Uint8Array;
+}
+
 export async function streamFileBody(
   channel: RTCDataChannel,
   id: string,
   file: File,
   onSent: (sent: number) => void,
-  opts: { startSeq?: number; signal?: AbortSignal } = {},
+  opts: { startSeq?: number; signal?: AbortSignal; crypto?: StreamCrypto } = {},
 ): Promise<StreamResult> {
   channel.bufferedAmountLowThreshold = LOW_WATER_MARK;
   let seq = opts.startSeq ?? 0;
   let offset = seq * CHUNK_SIZE;
-  const { signal } = opts;
+  const { signal, crypto: enc } = opts;
 
   while (offset < file.size) {
     if (signal?.aborted) return { completed: false, nextSeq: seq };
     const drained = await waitForBufferedAmountLow(channel, signal);
     if (!drained) return { completed: false, nextSeq: seq };
-    const buffer = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer();
+    const plain = await file.slice(offset, offset + CHUNK_SIZE).arrayBuffer();
+    const payload = enc
+      ? await encryptChunk(enc.key, plain, buildIv(enc.nonce, seq), buildAad(id, seq))
+      : plain;
     if (signal?.aborted) return { completed: false, nextSeq: seq };
     try {
       sendControl(channel, { type: "chunk", id, seq });
-      channel.send(buffer);
+      channel.send(payload);
     } catch {
       return { completed: false, nextSeq: seq }; // channel closed under us
     }
-    offset += buffer.byteLength;
+    offset += plain.byteLength; // plaintext progress
     seq += 1;
     onSent(offset);
   }
@@ -274,6 +301,11 @@ interface InProgressFile {
   contiguousSeq: number;
   // Bytes of contiguous data since the last chunk-ack was sent.
   bytesSinceAck: number;
+  // Set when the transfer is E2E-encrypted: the derived key (async) and this
+  // transfer's nonce, used to decrypt each chunk before it's written.
+  crypto?: { key: Promise<CryptoKey>; nonce: Uint8Array };
+  // Resolves once the encrypted filename has been decrypted into `name`.
+  nameReady?: Promise<void>;
 }
 
 interface FolderContext {
@@ -295,6 +327,24 @@ export class FileReceiver {
   private pendingChunkFileId: string | null = null;
   private pendingChunkSeq = 0;
   private folder: FolderContext | null = null;
+  // Out-of-band passphrase for decrypting E2E-encrypted transfers, if the user
+  // entered one. Derived keys are cached by salt so a transfer only pays the
+  // PBKDF2 cost once.
+  private passphrase: string | null = null;
+  private keyCache = new Map<string, Promise<CryptoKey>>();
+
+  setPassphrase(passphrase: string | null): void {
+    this.passphrase = passphrase || null;
+  }
+
+  private getKey(saltB64: string): Promise<CryptoKey> {
+    let key = this.keyCache.get(saltB64);
+    if (!key) {
+      key = deriveKey(this.passphrase ?? "", fromBase64(saltB64));
+      this.keyCache.set(saltB64, key);
+    }
+    return key;
+  }
 
   onFile: (file: IncomingFile) => void = () => {};
   onProgress: (progress: ReceiveProgress) => void = () => {};
@@ -382,6 +432,28 @@ export class FileReceiver {
           contiguousSeq: -1,
           bytesSinceAck: 0,
         };
+        // E2E-encrypted single file: derive the key and decrypt the name. A
+        // missing passphrase fails loudly now rather than writing garbage.
+        if (message.crypto && message.crypto.salt) {
+          if (!this.passphrase) {
+            this.onError(message.id, "passphrase_required");
+            break; // don't register the file; nothing to receive without a key
+          }
+          const nonce = fromBase64(message.crypto.nonce);
+          const key = this.getKey(message.crypto.salt);
+          rec.crypto = { key, nonce };
+          if (message.encName) {
+            rec.nameReady = key
+              .then((k) => decryptName(k, message.encName!, nonce, message.id))
+              .then((name) => {
+                rec.name = name;
+              })
+              .catch(() => {
+                // Wrong passphrase: the first chunk's decrypt fails too, which is
+                // where the transfer is actually marked failed.
+              });
+          }
+        }
         // Folders stay in memory (typically many small files); OPFS backs single
         // large files, where the growing in-memory array was the OOM risk.
         if (!isFolderFile && shouldUseOpfs()) {
@@ -421,28 +493,30 @@ export class FileReceiver {
     // Idempotent resume: a reconnect may replay chunks we already have.
     if (seq <= file.contiguousSeq) return;
 
-    file.received += data.byteLength;
+    // Progress is tracked in PLAINTEXT bytes; an encrypted chunk on the wire is
+    // GCM_TAG_BYTES larger, and we don't want to wait for the async decrypt here.
+    const plainLen = file.crypto ? data.byteLength - GCM_TAG_BYTES : data.byteLength;
+    file.received += plainLen;
     // Ordered channel: a new chunk is always the next contiguous seq.
     if (seq === file.contiguousSeq + 1) file.contiguousSeq = seq;
 
     // Acknowledge contiguous progress periodically so a resume knows how far it
     // safely got.
-    file.bytesSinceAck += data.byteLength;
+    file.bytesSinceAck += plainLen;
     if (file.bytesSinceAck >= ACK_INTERVAL) {
       file.bytesSinceAck = 0;
       this.onSendControl({ type: "chunk-ack", id: fileId, contiguousSeq: file.contiguousSeq });
     }
 
-    if (file.writer) {
-      // Serialize onto the write chain (offset-addressed, so order is by seq
-      // anyway) and await it in finishFile. A failed write fails the file once.
+    // Encryption and OPFS are both async, so they share the ordered write chain
+    // (finishFile awaits it). Plain in-memory receives stay a synchronous push.
+    if (file.crypto || file.writer) {
       file.writeChain = file.writeChain
-        .then(() => file.writer!)
-        .then((w) => w.writeChunk(seq, data))
+        .then(() => this.processChunk(file, fileId, seq, data))
         .catch((err) => {
           if (!file.failed) {
             file.failed = true;
-            this.onError(fileId, "opfs_write_failed");
+            this.onError(fileId, (err as Error)?.message === "bad_passphrase" ? "bad_passphrase" : "opfs_write_failed");
           }
           throw err;
         });
@@ -452,10 +526,36 @@ export class FileReceiver {
     }
 
     if (this.folder && this.folder.entryById.has(fileId)) {
-      this.folder.bytesReceived += data.byteLength;
+      this.folder.bytesReceived += plainLen;
       this.emitFolderProgress();
     } else {
       this.onProgress({ id: fileId, received: file.received, total: file.size });
+    }
+  }
+
+  // Decrypt (if encrypted), then persist to OPFS or the in-memory array. A GCM
+  // tag failure here (wrong passphrase) surfaces as "bad_passphrase" and aborts,
+  // rather than writing corrupt output.
+  private async processChunk(
+    file: InProgressFile,
+    fileId: string,
+    seq: number,
+    data: ArrayBuffer,
+  ): Promise<void> {
+    let plain = data;
+    if (file.crypto) {
+      const key = await file.crypto.key;
+      try {
+        plain = await decryptChunk(key, data, buildIv(file.crypto.nonce, seq), buildAad(fileId, seq));
+      } catch {
+        throw new Error("bad_passphrase");
+      }
+    }
+    if (file.writer) {
+      const w = await file.writer;
+      await w.writeChunk(seq, plain);
+    } else {
+      file.chunks.push(plain);
     }
   }
 
@@ -464,40 +564,46 @@ export class FileReceiver {
     if (!file) return;
     this.files.delete(id);
 
-    if (file.writer) {
-      void this.finishOpfsFile(id, file);
+    // Encrypted and/or OPFS receives finished writing asynchronously; wait for
+    // the chain (and decrypted name) before assembling the result.
+    if (file.crypto || file.writer) {
+      void this.finishAsyncFile(id, file);
       return;
     }
 
-    const blob = new Blob(file.chunks, { type: file.mimeType });
+    this.deliverBlob(id, file, new Blob(file.chunks, { type: file.mimeType }));
+  }
 
+  private async finishAsyncFile(id: string, file: InProgressFile): Promise<void> {
+    try {
+      await file.writeChain;
+      await file.nameReady;
+      if (file.failed) return; // a chunk failed (e.g. wrong passphrase)
+      let blob: Blob;
+      if (file.writer) {
+        const writer = await file.writer;
+        await writer.finalize();
+        blob = await writer.getFile(file.mimeType); // disk-backed, streams on download
+        writer.close();
+      } else {
+        blob = new Blob(file.chunks, { type: file.mimeType });
+      }
+      this.deliverBlob(id, file, blob);
+    } catch {
+      if (!file.failed) this.onError(id, "opfs_write_failed");
+    }
+  }
+
+  // Hand a finished file to the folder aggregator or straight to the caller.
+  private deliverBlob(id: string, file: InProgressFile, blob: Blob): void {
     if (this.folder && this.folder.entryById.has(id)) {
       this.folder.blobs.set(id, blob);
       this.folder.filesDone += 1;
       this.emitFolderProgress();
-      if (this.folder.filesDone >= this.folder.totalFiles) {
-        this.finishFolder();
-      }
+      if (this.folder.filesDone >= this.folder.totalFiles) this.finishFolder();
       return;
     }
-
     this.onFile({ id, name: file.name, size: file.size, mimeType: file.mimeType, blob });
-  }
-
-  // Flush the OPFS worker, then hand back a disk-backed File (streams from disk
-  // on download — no large in-memory allocation). OPFS files are never folder
-  // entries, so there's no folder bookkeeping here.
-  private async finishOpfsFile(id: string, file: InProgressFile): Promise<void> {
-    try {
-      await file.writeChain;
-      const writer = await file.writer!;
-      await writer.finalize();
-      const disk = await writer.getFile(file.mimeType);
-      writer.close();
-      this.onFile({ id, name: file.name, size: file.size, mimeType: file.mimeType, blob: disk });
-    } catch {
-      if (!file.failed) this.onError(id, "opfs_write_failed");
-    }
   }
 
   private emitFolderProgress(): void {

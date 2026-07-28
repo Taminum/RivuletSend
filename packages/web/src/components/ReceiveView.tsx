@@ -10,12 +10,19 @@ import { FolderRow } from "./FolderRow";
 import { PulseLine } from "./PulseLine";
 
 export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer) => void }) {
-  const { connected, transfers, folders, error, joinRoom } = useTransferSession(onComplete);
+  const { connected, transfers, folders, error, joinRoom, setPassphrase } = useTransferSession(onComplete);
   const [code, setCode] = useState("");
+  const [passphrase, setPassphraseInput] = useState("");
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [preview, setPreview] = useState<Transfer | null>(null);
   const attempted = useRef(false);
+
+  // Keep the session's passphrase in sync so an encrypted transfer can be
+  // decrypted the moment it starts arriving (never sent over the wire).
+  useEffect(() => {
+    setPassphrase(passphrase.trim() || null);
+  }, [passphrase, setPassphrase]);
 
   const connect = useCallback(
     async (raw: string) => {
@@ -63,6 +70,17 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
               onKeyDown={(e) => e.key === "Enter" && valid && connect(code)}
             />
           </div>
+          <div className="field">
+            <label>Passphrase (only if the sender set one)</label>
+            <input
+              className="input"
+              type="text"
+              autoComplete="off"
+              placeholder="Leave blank for none"
+              value={passphrase}
+              onChange={(e) => setPassphraseInput(e.target.value)}
+            />
+          </div>
           <button
             className="btn btn-primary btn-block"
             disabled={!valid || joining}
@@ -93,6 +111,7 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
           <PulseLine active={connected} />
           {connected ? "Connected — waiting for files…" : "Connecting to sender…"}
         </div>
+        {error && <p className="error" style={{ marginBottom: 0 }}>{error}</p>}
       </div>
 
       {receivedFolders.length > 0 && (
