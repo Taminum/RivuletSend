@@ -3,10 +3,14 @@ import type { FolderTransfer } from "../transfers";
 import { canSaveFolder, saveFolderToDisk, downloadFolderAsZip } from "../fileTransfer";
 import { formatBytes } from "../format";
 import { FolderIcon } from "../icons";
+import { FolderTree } from "./FolderTree";
 
-// One collapsed row for a whole folder transfer ("photos/ — 12 of 47 files").
+// One collapsed row for a whole folder transfer ("photos/ — 12 of 47 files"),
+// expandable into a read-only tree of its files.
 export function FolderRow({ folder }: { folder: FolderTransfer }) {
   const [busy, setBusy] = useState(false);
+  const [showTree, setShowTree] = useState(false);
+  const hasTree = Boolean(folder.entries?.length);
   const pct = folder.failed
     ? 100
     : folder.totalBytes
@@ -44,6 +48,15 @@ export function FolderRow({ folder }: { folder: FolderTransfer }) {
             {folder.failed && <span className="failed-tag"> · failed — {folder.reason}</span>}
           </span>
         </span>
+        {hasTree && (
+          <button
+            className="link-btn"
+            onClick={() => setShowTree((s) => !s)}
+            title={showTree ? "Hide files" : "Show files"}
+          >
+            {showTree ? "Hide files" : "Show files"}
+          </button>
+        )}
         {canReceiveActions && (
           <span className="row-actions">
             {canSaveFolder && (
@@ -63,6 +76,7 @@ export function FolderRow({ folder }: { folder: FolderTransfer }) {
           style={{ width: `${pct}%` }}
         />
       </div>
+      {showTree && hasTree && <FolderTree folder={folder} />}
     </li>
   );
 }

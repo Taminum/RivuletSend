@@ -184,6 +184,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
           filesDone: 0,
           bytesTransferred: 0,
           done: false,
+          entries: start.entries.map((e) => ({ relativePath: e.relativePath, size: e.size })),
         });
         if (direction === "send") {
           activeFolder.current = {

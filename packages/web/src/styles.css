@@ -866,6 +866,85 @@ textarea.input {
   align-self: center;
 }
 
+/* ---------- Folder tree view ---------- */
+.ft-tree {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ft-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ft-dir {
+  cursor: pointer;
+  color: var(--rs-text);
+  font-weight: 500;
+}
+
+.ft-dir:hover {
+  background: var(--surface-3);
+}
+
+.ft-chevron {
+  display: inline-block;
+  width: 12px;
+  font-size: 10px;
+  color: var(--rs-text-muted);
+  transition: transform 0.15s;
+}
+
+.ft-chevron.open {
+  transform: rotate(90deg);
+}
+
+.ft-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-file .ft-name {
+  color: var(--rs-text-muted);
+}
+
+.ft-file.done .ft-name {
+  color: var(--rs-text);
+}
+
+.ft-file.active .ft-name {
+  color: var(--rs-accent-soft);
+}
+
+.ft-size {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--rs-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ft-status {
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.ft-status.ok {
+  color: var(--rs-online);
+}
+
+.ft-status.active {
+  color: var(--rs-accent-soft);
+}
+
 /* ---------- Contacts ---------- */
 .avatar {
   width: 34px;

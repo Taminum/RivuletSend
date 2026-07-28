@@ -77,6 +77,9 @@ export interface FolderStart {
   folderName: string;
   totalFiles: number;
   totalBytes: number;
+  // The manifest, in send order — the receiver has the full file list before
+  // any bytes arrive, so a tree view can render immediately.
+  entries: { id: string; relativePath: string; size: number }[];
 }
 
 export interface FolderProgress {
@@ -177,7 +180,7 @@ export async function sendFolder(
   }));
   const totalBytes = entries.reduce((sum, e) => sum + e.file.size, 0);
 
-  onStart?.({ folderId, folderName, totalFiles: entries.length, totalBytes });
+  onStart?.({ folderId, folderName, totalFiles: entries.length, totalBytes, entries: manifest });
   sendControl(channel, { type: "manifest", folderName, entries: manifest });
 
   let bytesTransferred = 0;
@@ -416,6 +419,7 @@ export class FileReceiver {
           folderName: this.folder.folderName,
           totalFiles: this.folder.totalFiles,
           totalBytes: this.folder.totalBytes,
+          entries: message.entries,
         });
         break;
       }

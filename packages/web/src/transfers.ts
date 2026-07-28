@@ -29,6 +29,9 @@ export interface FolderTransfer {
   reason?: string;
   incoming?: IncomingFolder; // received folder, for save/zip
   savedPath?: string; // set when the desktop shell auto-saved it to disk
+  // The manifest in send order, for the folder tree view. Files stream
+  // sequentially in this order, so index < filesDone == that file is done.
+  entries?: { relativePath: string; size: number }[];
 }
 
 // Emitted once when a transfer reaches a terminal state (completed OR failed),
