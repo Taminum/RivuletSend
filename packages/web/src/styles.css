@@ -1254,8 +1254,8 @@ textarea.input {
 .send-2col {
   display: flex;
   align-items: flex-start;
-  gap: 20px;
-  max-width: 960px;
+  gap: 24px;
+  max-width: 1280px;
 }
 
 .send-main {
@@ -1267,7 +1267,7 @@ textarea.input {
 }
 
 .send-side {
-  width: 250px;
+  width: 320px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
