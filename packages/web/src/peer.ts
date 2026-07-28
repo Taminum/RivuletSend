@@ -112,7 +112,7 @@ export class PeerConnection {
     this.receiver.onSendControl = (msg) => this.sendChannelControl(msg);
   }
 
-  createRoom(): Promise<string> {
+  createRoom(burnAfterRead = false): Promise<string> {
     return new Promise((resolve, reject) => {
       const ws = this.connectSignaling();
       const onMessage = (event: MessageEvent) => {
@@ -126,9 +126,15 @@ export class PeerConnection {
         }
       };
       ws.addEventListener("message", onMessage);
-      ws.addEventListener("open", () => this.send({ type: "create" }));
+      ws.addEventListener("open", () => this.send({ type: "create", burnAfterRead }));
       ws.addEventListener("error", () => reject(new Error("Signaling connection failed")));
     });
+  }
+
+  // Tell signaling the whole transfer finished — invalidates a burn-after-read
+  // code for any further joins.
+  reportTransferComplete(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) this.send({ type: "transfer-complete" });
   }
 
   joinRoom(code: string): Promise<void> {

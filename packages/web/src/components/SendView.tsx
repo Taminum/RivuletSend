@@ -35,6 +35,7 @@ export function SendView({
   const [dragOver, setDragOver] = useState(false);
   const [copied, setCopied] = useState(false);
   const [passphrase, setPassphraseInput] = useState("");
+  const [burnAfterRead, setBurnAfterRead] = useState(false);
 
   // Push the passphrase down to the session (never sent over the wire).
   useEffect(() => {
@@ -65,7 +66,7 @@ export function SendView({
     setIsFolder(false);
     pendingRef.current = selected;
     try {
-      setCode(await createRoom());
+      setCode(await createRoom(burnAfterRead));
     } catch {
       /* error surfaced via hook */
     }
@@ -76,7 +77,7 @@ export function SendView({
     setIsFolder(true);
     pendingFolderRef.current = sel;
     try {
-      setCode(await createRoom());
+      setCode(await createRoom(burnAfterRead));
     } catch {
       /* surfaced via hook */
     }
@@ -292,6 +293,18 @@ export function SendView({
           <strong>different channel</strong> — sending it with the code defeats the purpose. Applies to
           single files (not folders).
         </p>
+
+        <label className="burn-check" style={{ marginTop: 14 }}>
+          <input
+            type="checkbox"
+            checked={burnAfterRead}
+            onChange={(e) => setBurnAfterRead(e.target.checked)}
+          />
+          <span>
+            <span className="file-name">Close this link after it's downloaded once</span>
+            <span className="file-sub">The code stops working as soon as one transfer completes.</span>
+          </span>
+        </label>
       </div>
 
       {/* Hidden pickers live OUTSIDE the dropzone on purpose: clicking one

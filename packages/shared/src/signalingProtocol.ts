@@ -4,9 +4,13 @@
 
 export type ClientToServerMessage =
   // --- Anonymous, code-based flow (Phase 1) ---
-  | { type: "create" }
+  // burnAfterRead: invalidate this code as soon as one full transfer completes.
+  | { type: "create"; burnAfterRead?: boolean }
   | { type: "join"; code: string }
   | { type: "signal"; payload: unknown }
+  // Receiver reports the whole transfer finished — on a burn-after-read room
+  // this invalidates the code for any further joins.
+  | { type: "transfer-complete" }
   // --- Authenticated, contact-based flow (Phase 1.5) ---
   // Authenticate this socket and register presence (user is "online").
   | { type: "auth"; token: string }

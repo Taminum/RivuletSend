@@ -176,6 +176,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
           status: "completed",
         });
         notifyTransferComplete(file.name, formatBytes(file.size));
+        peerRef.current?.reportTransferComplete();
       };
       peer.onFolderStart = (start, direction) => {
         upsertFolder(start.folderId, {
@@ -224,16 +225,20 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
       peer.onIncomingFolder = (folder) => {
         upsertFolder(folder.folderId, { folderId: folder.folderId, done: true, incoming: folder });
         notifyTransferComplete(`${folder.folderName}/`, `${folder.files.length} files`);
+        peerRef.current?.reportTransferComplete();
       };
       peerRef.current = peer;
     }
     return peerRef.current;
   }, [upsert]);
 
-  const createRoom = useCallback(async () => {
-    setError(null);
-    return getPeer().createRoom();
-  }, [getPeer]);
+  const createRoom = useCallback(
+    async (burnAfterRead = false) => {
+      setError(null);
+      return getPeer().createRoom(burnAfterRead);
+    },
+    [getPeer],
+  );
 
   const joinRoom = useCallback(
     async (code: string) => {

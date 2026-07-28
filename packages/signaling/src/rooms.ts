@@ -7,6 +7,11 @@ interface Room {
   code: string;
   peers: WebSocket[];
   idleTimer: ReturnType<typeof setTimeout>;
+  // Burn-after-read: once one full transfer completes on this room, the code is
+  // invalidated for any further joins. Layered on top of the idle TTL, not a
+  // separate timer.
+  burnAfterRead?: boolean;
+  completedAt?: number;
 }
 
 const rooms = new Map<string, Room>();
@@ -18,11 +23,11 @@ function scheduleIdleCleanup(room: Room): void {
   room.idleTimer.unref?.();
 }
 
-export function createRoom(creator: WebSocket): string {
+export function createRoom(creator: WebSocket, burnAfterRead = false): string {
   let code = generateRoomCode();
   while (rooms.has(code)) code = generateRoomCode();
 
-  const room: Room = { code, peers: [creator], idleTimer: setTimeout(() => {}, 0) };
+  const room: Room = { code, peers: [creator], idleTimer: setTimeout(() => {}, 0), burnAfterRead };
   scheduleIdleCleanup(room);
   rooms.set(code, room);
   socketToRoom.set(creator, code);
@@ -31,7 +36,7 @@ export function createRoom(creator: WebSocket): string {
 
 export type JoinResult =
   | { ok: true }
-  | { ok: false; reason: "not-found" | "full" | "invalid-code" };
+  | { ok: false; reason: "not-found" | "full" | "invalid-code" | "used" };
 
 export function joinRoom(code: string, joiner: WebSocket): JoinResult {
   const normalized = code.toUpperCase();
@@ -39,12 +44,23 @@ export function joinRoom(code: string, joiner: WebSocket): JoinResult {
 
   const room = rooms.get(normalized);
   if (!room) return { ok: false, reason: "not-found" };
+  // Burn-after-read: a completed one-shot link can't be reused.
+  if (room.burnAfterRead && room.completedAt) return { ok: false, reason: "used" };
   if (room.peers.length >= 2) return { ok: false, reason: "full" };
 
   room.peers.push(joiner);
   socketToRoom.set(joiner, normalized);
   scheduleIdleCleanup(room);
   return { ok: true };
+}
+
+// The receiver reported a full transfer finished. On a burn-after-read room this
+// stamps completedAt, which joinRoom then treats as an invalidated code.
+export function markTransferComplete(socket: WebSocket): void {
+  const code = socketToRoom.get(socket);
+  if (!code) return;
+  const room = rooms.get(code);
+  if (room?.burnAfterRead && !room.completedAt) room.completedAt = Date.now();
 }
 
 // Directly pair two already-connected sockets into a room (used by the

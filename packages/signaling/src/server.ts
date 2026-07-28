@@ -9,6 +9,7 @@ import {
   leaveRoom,
   pairSockets,
   roomCount,
+  markTransferComplete,
 } from "./rooms.js";
 import { allowRoomCreate } from "./rateLimiter.js";
 import { env } from "./env.js";
@@ -108,7 +109,7 @@ wss.on("connection", (socket, req) => {
           send(socket, { type: "error", message: "Too many rooms created, try again shortly" });
           return;
         }
-        const code = createRoom(socket);
+        const code = createRoom(socket, message.burnAfterRead === true);
         send(socket, { type: "created", code });
         break;
       }
@@ -116,7 +117,11 @@ wss.on("connection", (socket, req) => {
       case "join": {
         const result = joinRoom(message.code, socket);
         if (!result.ok) {
-          send(socket, { type: "error", message: `Cannot join room: ${result.reason}` });
+          const msg =
+            result.reason === "used"
+              ? "This link has already been used."
+              : `Cannot join room: ${result.reason}`;
+          send(socket, { type: "error", message: msg });
           return;
         }
         const peer = getPeer(socket);
@@ -133,6 +138,12 @@ wss.on("connection", (socket, req) => {
         if (peer) {
           send(peer, { type: "signal", payload: message.payload });
         }
+        break;
+      }
+
+      case "transfer-complete": {
+        // Receiver finished the whole transfer; invalidate a burn-after-read code.
+        markTransferComplete(socket);
         break;
       }
 

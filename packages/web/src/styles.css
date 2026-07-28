@@ -1232,6 +1232,24 @@ textarea.input {
   object-fit: cover;
 }
 
+/* ---------- Burn-after-read checkbox ---------- */
+.burn-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.burn-check input {
+  margin-top: 3px;
+  accent-color: var(--rs-accent);
+  flex-shrink: 0;
+}
+
+.burn-check .file-name {
+  display: block;
+}
+
 .preview-text {
   width: 100%;
   margin: 0;
