@@ -9,6 +9,8 @@ export interface Transfer {
   url?: string; // object URL, set on received files once complete
   mimeType?: string; // set on received files, for preview
   savedPath?: string; // set when the desktop shell auto-saved it to disk
+  speed?: number; // live transfer speed in bytes/sec (smoothed)
+  etaSeconds?: number; // estimated seconds remaining
 }
 
 // A folder transfer shows as a single collapsed row (X of Y files) rather than

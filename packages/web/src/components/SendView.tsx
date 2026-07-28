@@ -9,11 +9,18 @@ import { ContactSendList } from "./ContactSendList";
 import { ContactMultiSend } from "./ContactMultiSend";
 import { MyDevicesSend } from "./MyDevicesSend";
 import { FolderRow } from "./FolderRow";
-import { PulseLine } from "./PulseLine";
+import { PeerBeam } from "./PeerBeam";
 import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon } from "../icons";
 
 type Mode = "files" | "text";
 type NavTarget = "contacts" | "settings";
+
+function formatEta(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${String(s % 60).padStart(2, "0")}s`;
+}
 
 export function SendView({
   mode,
@@ -110,6 +117,16 @@ export function SendView({
     const allDone = isFolder
       ? folders.length > 0 && folders.every((f) => f.done || f.failed)
       : transfers.length > 0 && transfers.every((t) => t.size > 0 && t.transferred >= t.size);
+
+    // Live speedometer + ETA across the in-flight file sends.
+    const inFlight = transfers.filter(
+      (t) => t.direction === "send" && t.size > 0 && t.transferred < t.size,
+    );
+    const totalSpeed = inFlight.reduce((s, t) => s + (t.speed ?? 0), 0);
+    const remaining = inFlight.reduce((s, t) => s + (t.size - t.transferred), 0);
+    const etaSeconds = totalSpeed > 0 ? remaining / totalSpeed : null;
+    const showSpeed = connected && !allDone && inFlight.length > 0 && totalSpeed > 0;
+
     return (
       <div className="view">
         <div className="card share">
@@ -136,27 +153,24 @@ export function SendView({
             <span className="muted">Scan to open the receive link on a phone</span>
           </div>
 
-          <div className="status-line" style={{ marginTop: 18 }}>
-            {connected ? (
-              allDone ? (
-                isFolder ? "Done — folder sent" : "Done — files sent"
-              ) : (
-                <>
-                  <PulseLine /> Connected — sending…
-                </>
-              )
-            ) : (
-              <>
-                <PulseLine /> Waiting for the receiver…
-              </>
-            )}
+          <div style={{ marginTop: 20 }}>
+            <PeerBeam state={!connected ? "waiting" : allDone ? "done" : "transferring"} />
           </div>
           {connected && !allDone && (
-            <p className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
+            <p className="muted" style={{ marginTop: 14, fontSize: 12.5, textAlign: "center" }}>
               Reconnects automatically if the connection drops — closing the tab cancels the transfer.
             </p>
           )}
         </div>
+
+        {showSpeed && (
+          <div className="card speed-card">
+            <div className="speed-val">{formatBytes(totalSpeed)}/s</div>
+            {etaSeconds != null && (
+              <div className="speed-eta">~{formatEta(etaSeconds)} left</div>
+            )}
+          </div>
+        )}
 
         <div className="card">
           <ul className="file-list">

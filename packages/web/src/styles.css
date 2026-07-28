@@ -14,6 +14,13 @@
   --rs-radius-lg: 20px;
   --rs-radius-md: 14px;
   --rs-radius-sm: 10px;
+
+  /* --- RivuletSend 2.0: glassmorphism + neon --- */
+  --rs-glass-bg: rgba(28, 28, 32, 0.65);
+  --rs-glass-border: rgba(255, 255, 255, 0.08);
+  --rs-glass-blur: blur(16px);
+  --rs-neon-glow: 0 0 24px rgba(124, 109, 242, 0.25);
+  --rs-amber: #fa8a00; /* neon accent end (progress, brand glow) */
   --rs-font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
   --rs-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 
@@ -104,15 +111,20 @@ a {
 }
 
 .logo-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius);
-  background: var(--rs-accent);
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--rs-bg);
   flex-shrink: 0;
+  /* Amber–violet glow around the Rivulet owl. */
+  box-shadow: 0 0 18px rgba(124, 109, 242, 0.4), 0 0 9px rgba(250, 138, 0, 0.28);
+}
+
+.logo-mark img {
+  display: block;
+  border-radius: 8px;
 }
 
 .brand-name {
@@ -122,6 +134,11 @@ a {
   flex: 1;
   overflow: hidden;
   white-space: nowrap;
+  /* Juicy amber–violet wordmark. */
+  background: linear-gradient(90deg, var(--rs-accent-soft), var(--rs-amber));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .collapse-btn {
@@ -246,22 +263,54 @@ a {
 
 /* ---------- Dropzone ---------- */
 .dropzone {
-  border: 2px dashed var(--rs-border);
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.012);
+  border: 1px solid var(--rs-glass-border);
+  border-radius: 24px;
+  background: var(--rs-glass-bg);
+  -webkit-backdrop-filter: var(--rs-glass-blur);
+  backdrop-filter: var(--rs-glass-blur);
   padding: 52px 24px;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.dropzone:hover,
+.dropzone:hover {
+  border-color: color-mix(in srgb, var(--rs-accent), transparent 55%);
+  box-shadow: var(--rs-neon-glow);
+}
+
 .dropzone.drag-over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--rs-accent);
+  background: color-mix(in srgb, var(--rs-accent), var(--rs-glass-bg) 84%);
+  animation: dz-neon 1.4s ease-in-out infinite;
+}
+
+/* Neon pulse around the contour while dragging over. */
+@keyframes dz-neon {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(124, 109, 242, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 36px rgba(124, 109, 242, 0.5);
+  }
+}
+
+.dropzone.drag-over .dz-icon {
+  animation: dz-pulse 1s ease-in-out infinite;
+}
+
+@keyframes dz-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.14);
+  }
 }
 
 .dz-icon {
@@ -619,13 +668,177 @@ textarea.input {
 
 .progress-fill {
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--rs-accent), var(--rs-amber));
   border-radius: 999px;
+  box-shadow: 0 0 10px rgba(124, 109, 242, 0.55);
   transition: width 0.1s linear;
 }
 
 .progress-fill.done {
   background: var(--green);
+  box-shadow: 0 0 10px rgba(62, 213, 152, 0.5);
+}
+
+/* ---------- P2P connection visualizer (PeerBeam) ---------- */
+.peerbeam {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.pb-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.pb-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pb-dot {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rs-glass-bg);
+  -webkit-backdrop-filter: var(--rs-glass-blur);
+  backdrop-filter: var(--rs-glass-blur);
+  border: 1px solid var(--rs-glass-border);
+  color: var(--rs-accent-soft);
+  box-shadow: var(--rs-neon-glow);
+}
+
+.pb-label {
+  font-size: 11px;
+  color: var(--rs-text-muted);
+}
+
+.pb-beam {
+  position: relative;
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--rs-accent), var(--rs-amber));
+  opacity: 0.3;
+  transition: opacity 0.25s;
+}
+
+.pb-packet {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--rs-amber);
+  box-shadow: 0 0 8px var(--rs-amber);
+  opacity: 0;
+}
+
+.pb-status {
+  font-size: 13px;
+  color: var(--rs-text-muted);
+}
+
+/* Waiting: dim the peer node and pulse it gently. */
+.peerbeam.waiting .pb-node:last-child .pb-dot {
+  box-shadow: none;
+  animation: pb-wait 1.6s ease-in-out infinite;
+}
+
+@keyframes pb-wait {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* Transferring: light up the beam and stream packets across it. */
+.peerbeam.transferring .pb-beam {
+  opacity: 0.95;
+  box-shadow: 0 0 10px rgba(124, 109, 242, 0.5);
+}
+
+.peerbeam.transferring .pb-status {
+  color: var(--rs-accent-soft);
+}
+
+.peerbeam.transferring .pb-packet {
+  animation: pb-flow 1.3s linear infinite;
+}
+
+.peerbeam.transferring .pb-packet:nth-child(2) {
+  animation-delay: 0.43s;
+}
+
+.peerbeam.transferring .pb-packet:nth-child(3) {
+  animation-delay: 0.86s;
+}
+
+@keyframes pb-flow {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+.peerbeam.done .pb-beam {
+  opacity: 0.9;
+  background: var(--green);
+}
+
+.peerbeam.done .pb-status {
+  color: var(--green);
+}
+
+/* ---------- Live speedometer + ETA ---------- */
+.speed-card {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.speed-val {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(90deg, var(--rs-accent-soft), var(--rs-amber));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 22px rgba(124, 109, 242, 0.28);
+}
+
+.speed-eta {
+  font-size: 13.5px;
+  color: var(--rs-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Contacts ---------- */

@@ -25,11 +25,45 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
   const [folders, setFolders] = useState<FolderTransfer[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Per-transfer speed samples (bytes/time/EMA), for the live speed + ETA.
+  const speedRef = useRef<Map<string, { bytes: number; time: number; ema: number }>>(new Map());
+
   const upsert = useCallback((id: string, update: Partial<Transfer> & Pick<Transfer, "id">) => {
     setTransfers((prev) => {
       const existing = prev.find((t) => t.id === id);
-      if (existing) return prev.map((t) => (t.id === id ? { ...t, ...update } : t));
-      return [...prev, { direction: "send", name: "", size: 0, transferred: 0, ...update, id }];
+      const merged: Transfer = existing
+        ? { ...existing, ...update }
+        : { direction: "send", name: "", size: 0, transferred: 0, ...update, id };
+
+      // Live speed + ETA from sampled progress deltas (~150ms window, EMA-smoothed).
+      if (typeof update.transferred === "number") {
+        const now = performance.now();
+        const s = speedRef.current.get(id);
+        if (!s) {
+          speedRef.current.set(id, { bytes: update.transferred, time: now, ema: 0 });
+          merged.speed = existing?.speed;
+          merged.etaSeconds = existing?.etaSeconds;
+        } else {
+          const dt = (now - s.time) / 1000;
+          const db = update.transferred - s.bytes;
+          if (dt >= 0.15 && db >= 0) {
+            const inst = db / dt;
+            const ema = s.ema > 0 ? s.ema * 0.7 + inst * 0.3 : inst;
+            s.time = now;
+            s.bytes = update.transferred;
+            s.ema = ema;
+            merged.speed = ema;
+            merged.etaSeconds =
+              ema > 0 && merged.size > 0 ? Math.max(0, (merged.size - merged.transferred) / ema) : undefined;
+          } else {
+            merged.speed = existing?.speed;
+            merged.etaSeconds = existing?.etaSeconds;
+          }
+        }
+      }
+
+      if (existing) return prev.map((t) => (t.id === id ? merged : t));
+      return [...prev, merged];
     });
   }, []);
 
@@ -233,6 +267,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
     peerRef.current?.close();
     peerRef.current = null;
     activeFolder.current = null;
+    speedRef.current.clear();
     setConnected(false);
     setTransfers([]);
     setFolders([]);

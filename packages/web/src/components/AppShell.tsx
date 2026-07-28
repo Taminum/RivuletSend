@@ -83,7 +83,7 @@ export function AppShell({
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
           <span className="logo-mark">
-            <SendIcon size={16} />
+            <img src="/logo.svg" alt="" width={30} height={30} />
           </span>
           <span className="brand-name">RivuletSend</span>
           <button className="collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar">

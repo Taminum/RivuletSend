@@ -7,7 +7,7 @@ import { formatBytes } from "../format";
 import { FileIcon, ReceiveIcon } from "../icons";
 import { FilePreview } from "./FilePreview";
 import { FolderRow } from "./FolderRow";
-import { PulseLine } from "./PulseLine";
+import { PeerBeam } from "./PeerBeam";
 
 export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer) => void }) {
   const { connected, transfers, folders, error, joinRoom, setPassphrase } = useTransferSession(onComplete);
@@ -104,14 +104,16 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
 
   const received = transfers.filter((t) => t.direction === "receive");
   const receivedFolders = folders.filter((f) => f.direction === "receive");
+  const receiving =
+    received.some((t) => t.transferred < t.size) || receivedFolders.some((f) => !f.done);
+  const beamState = !connected ? "waiting" : receiving ? "transferring" : "connected";
   return (
     <div className="view">
       <div className="card">
-        <div className="status-line" style={{ justifyContent: "flex-start" }}>
-          <PulseLine active={connected} />
-          {connected ? "Connected — waiting for files…" : "Connecting to sender…"}
+        <div style={{ padding: "6px 0" }}>
+          <PeerBeam state={beamState} />
         </div>
-        {error && <p className="error" style={{ marginBottom: 0 }}>{error}</p>}
+        {error && <p className="error" style={{ marginBottom: 0, textAlign: "center" }}>{error}</p>}
       </div>
 
       {receivedFolders.length > 0 && (
