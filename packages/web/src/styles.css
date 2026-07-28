@@ -1196,6 +1196,42 @@ textarea.input {
   height: 46px;
 }
 
+/* ---------- QR scanner ---------- */
+.code-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.code-input-row .code-input {
+  flex: 1;
+}
+
+.code-scan {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--rs-radius-md);
+  padding: 0 12px;
+  color: var(--rs-accent-soft);
+}
+
+.code-scan:hover {
+  background: var(--surface-3);
+  border-color: var(--rs-accent);
+}
+
+.qr-modal {
+  max-width: 420px;
+}
+
+.qr-video {
+  width: 100%;
+  max-height: 60vh;
+  border-radius: var(--radius);
+  background: #000;
+  object-fit: cover;
+}
+
 .preview-text {
   width: 100%;
   margin: 0;

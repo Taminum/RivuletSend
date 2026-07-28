@@ -8,11 +8,14 @@ import { FileIcon, ReceiveIcon } from "../icons";
 import { FilePreview } from "./FilePreview";
 import { FolderRow } from "./FolderRow";
 import { PeerBeam } from "./PeerBeam";
+import { QrScannerModal } from "./QrScannerModal";
+import { CameraIcon } from "../icons";
 
 export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer) => void }) {
   const { connected, transfers, folders, error, joinRoom, setPassphrase } = useTransferSession(onComplete);
   const [code, setCode] = useState("");
   const [passphrase, setPassphraseInput] = useState("");
+  const [scanning, setScanning] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [preview, setPreview] = useState<Transfer | null>(null);
@@ -61,14 +64,23 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
         <div className="card">
           <div className="field">
             <label>Enter the code from the sender</label>
-            <input
-              className="input code-input"
-              placeholder="········"
-              maxLength={8}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && valid && connect(code)}
-            />
+            <div className="code-input-row">
+              <input
+                className="input code-input"
+                placeholder="········"
+                maxLength={8}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && valid && connect(code)}
+              />
+              <button
+                className="icon-btn code-scan"
+                onClick={() => setScanning(true)}
+                title="Scan a QR code with your camera"
+              >
+                <CameraIcon size={18} />
+              </button>
+            </div>
           </div>
           <div className="field">
             <label>Passphrase (only if the sender set one)</label>
@@ -95,9 +107,19 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
             automatically — no code needed.
           </p>
           <p className="hint-line" style={{ margin: "4px 0 0" }}>
-            Or scan the sender's QR code with your phone camera to open the link directly.
+            Or tap the camera to scan the sender's QR with this device's webcam.
           </p>
         </div>
+        {scanning && (
+          <QrScannerModal
+            onDetected={(c) => {
+              setScanning(false);
+              setCode(c);
+              void connect(c);
+            }}
+            onClose={() => setScanning(false)}
+          />
+        )}
       </div>
     );
   }
