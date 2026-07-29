@@ -53,24 +53,10 @@ jobs:
             cp -r /tmp/rs-native/android ./android
           fi
 
-      # pnpm hoists deps to the workspace root, but the RN template's gradle
-      # files hardcode project-local ../node_modules paths. Repoint them at the
-      # actual (hoisted) locations so autolinking + the RN gradle plugin resolve.
-      - name: Fix RN gradle paths for the pnpm monorepo
-        working-directory: packages/android
-        run: |
-          resolve() { node --print "require('path').dirname(require.resolve('$1/package.json'))"; }
-          # Exported so perl reads them from %ENV — NOT interpolated into the perl
-          # source (the pnpm store paths contain @, which perl would treat as an
-          # array sigil and mangle: @react-native -> -native).
-          export RN_GRADLE_PLUGIN=$(resolve @react-native/gradle-plugin)
-          export RN_DIR=$(resolve react-native)
-          export CODEGEN_DIR=$(resolve @react-native/codegen)
-          export CLI_FILE=$(node --print "require.resolve('@react-native-community/cli/build/bin.js')")
-          echo "gradle-plugin: $RN_GRADLE_PLUGIN"
-          echo "react-native:  $RN_DIR"
-          perl -0pi -e 's|includeBuild\("\.\./node_modules/\@react-native/gradle-plugin"\)|includeBuild("$ENV{RN_GRADLE_PLUGIN}")|g' android/settings.gradle
-          perl -0pi -e 's|^react \{|react {\n    reactNativeDir = file("$ENV{RN_DIR}")\n    codegenDir = file("$ENV{CODEGEN_DIR}")\n    cliFile = file("$ENV{CLI_FILE}")|m' android/app/build.gradle
+      # No gradle-path patching needed: @react-native/gradle-plugin, codegen,
+      # react-native and the community CLI are declared as direct deps of
+      # @p2p/android, so pnpm symlinks them into packages/android/node_modules and
+      # the RN template's default ../node_modules paths resolve as-is.
 
       - name: Build debug APK
         working-directory: packages/android/android
