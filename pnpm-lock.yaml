@@ -36,9 +36,21 @@ importers:
       '@babel/runtime':
         specifier: ^7.25.0
         version: 7.29.7
+      '@react-native-community/cli':
+        specifier: ^14.1.0
+        version: 14.1.0(typescript@5.9.3)
+      '@react-native-community/cli-platform-android':
+        specifier: ^14.1.0
+        version: 14.1.0
       '@react-native/babel-preset':
         specifier: 0.75.4
         version: 0.75.4(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))
+      '@react-native/codegen':
+        specifier: 0.75.4
+        version: 0.75.4(@babel/preset-env@7.29.7(@babel/core@7.29.7))
+      '@react-native/gradle-plugin':
+        specifier: 0.75.4
+        version: 0.75.4
       '@react-native/metro-config':
         specifier: 0.75.4
         version: 0.75.4(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))
@@ -6094,7 +6106,9 @@ snapshots:
     transitivePeerDependencies:
       - '@babel/core'
       - '@babel/preset-env'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.75.4': {}
 
