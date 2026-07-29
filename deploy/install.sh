@@ -30,6 +30,9 @@ ASSUME_YES=0
 # the outer proxy forwards to.
 BEHIND_PROXY=0
 HTTP_PORT="${RS_HTTP_PORT:-8088}"
+# When the reverse proxy itself runs in Docker, join its network so it can reach
+# the app by container name (see docker-compose.npm-network.yml).
+PROXY_NETWORK="${RS_PROXY_NETWORK:-}"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -61,6 +64,11 @@ Optional:
                            certificate; serve plain HTTP on a loopback port for
                            that proxy to forward to. TLS is the outer proxy's job.
   --http-port <port>       Loopback port for --behind-proxy (default: 8088)
+  --proxy-network <name>   Reverse proxy runs in Docker too: join this existing
+                           docker network so the proxy reaches the app by
+                           container name (rivuletsend-caddy-1:80). Implies
+                           --behind-proxy. Find it with `docker network ls`
+                           (often npm_default / nginxproxymanager_default).
   -y, --yes                Don't stop for confirmations
   -h, --help               Show this help
 
@@ -87,6 +95,7 @@ while [ $# -gt 0 ]; do
     --no-turn) NO_TURN=1; shift ;;
     --behind-proxy) BEHIND_PROXY=1; shift ;;
     --http-port) HTTP_PORT="${2:-}"; shift 2 ;;
+    --proxy-network) PROXY_NETWORK="${2:-}"; BEHIND_PROXY=1; shift 2 ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
@@ -162,7 +171,12 @@ if [ "$BEHIND_PROXY" -eq 1 ]; then
   case "$HTTP_PORT" in
     ''|*[!0-9]*) die "--http-port must be a number (got '$HTTP_PORT')" ;;
   esac
-  serve_label="behind a reverse proxy — plain HTTP on 127.0.0.1:$HTTP_PORT"
+  if [ -n "$PROXY_NETWORK" ]; then
+    COMPOSE="$COMPOSE -f docker-compose.npm-network.yml"
+    serve_label="behind a dockerized proxy — on network '$PROXY_NETWORK' as rivuletsend-caddy-1:80"
+  else
+    serve_label="behind a reverse proxy — plain HTTP on 127.0.0.1:$HTTP_PORT"
+  fi
 else
   serve_label="Caddy on 80/443 with automatic HTTPS"
 fi
@@ -289,6 +303,9 @@ ACME_EMAIL=$EMAIL
 # Loopback HTTP port when running behind an external reverse proxy
 # (docker-compose.proxy.yml). Ignored in the default 80/443 mode.
 RS_HTTP_PORT=$HTTP_PORT
+# External docker network of a dockerized reverse proxy, joined via
+# docker-compose.npm-network.yml. Empty unless --proxy-network was used.
+RS_PROXY_NETWORK=$PROXY_NETWORK
 
 JWT_SECRET=$JWT_SECRET
 INTERNAL_SECRET=$INTERNAL_SECRET
@@ -399,11 +416,18 @@ case "$TURN_MODE" in
 esac
 
 if [ "$BEHIND_PROXY" -eq 1 ]; then
+  if [ -n "$PROXY_NETWORK" ]; then
+    fwd_host="rivuletsend-caddy-1   (container name, on network '$PROXY_NETWORK')"
+    fwd_port=80
+  else
+    fwd_host="127.0.0.1   (or this server's IP / host.docker.internal)"
+    fwd_port="$HTTP_PORT"
+  fi
   cat <<EOF
 
 Behind your reverse proxy — create a proxy host for $DOMAIN pointing at this app:
-  Forward Hostname / IP:  127.0.0.1   (or this server's IP / host.docker.internal)
-  Forward Port:           $HTTP_PORT
+  Forward Hostname / IP:  $fwd_host
+  Forward Port:           $fwd_port
   Scheme:                 http
   Websockets Support:     ON        (required — /ws is the signaling channel)
   SSL:                    request/force a certificate on the proxy (it does TLS)

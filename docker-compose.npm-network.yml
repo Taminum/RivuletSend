@@ -1,0 +1,24 @@
+# Extra overlay for a reverse proxy that ALSO runs in Docker (e.g. Nginx Proxy
+# Manager). A proxy in its own container can't reach 127.0.0.1:<port> on the
+# host, so instead put the internal Caddy on the SAME external network as the
+# proxy — then the proxy forwards to it by container name, and the link survives
+# `up -d` recreation (unlike a manual `docker network connect`).
+#
+# Layer it after the proxy overlay and set the network name in .env:
+#   RS_PROXY_NETWORK=npm_default
+#   docker compose -f docker-compose.prod.yml -f docker-compose.proxy.yml \
+#                  -f docker-compose.npm-network.yml up -d
+#
+# In the proxy, forward to  rivuletsend-caddy-1 : 80  (scheme http, websockets on).
+services:
+  caddy:
+    # Keep talking to api/signaling/web on the project's default network, and
+    # additionally join the proxy's network so it's reachable by name.
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${RS_PROXY_NETWORK:?set RS_PROXY_NETWORK to your reverse proxy's docker network}
