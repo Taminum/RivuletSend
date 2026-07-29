@@ -1,0 +1,45 @@
+name: Desktop release
+
+# Build the Windows desktop app in the cloud whenever a version tag is pushed,
+# and attach the installer + portable exe to the matching GitHub Release. No
+# local build machine needed — just `git tag vX.Y.Z && git push --tags`.
+on:
+  push:
+    tags:
+      - "v*"
+
+# action-gh-release needs write access to create/update the Release.
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Uses the committed build/icon.ico, so no Playwright/Chromium is needed in
+      # CI. Regenerate icons locally with `pnpm --filter @p2p/desktop icons` if
+      # the logo ever changes.
+      - name: Build installer + portable
+        run: pnpm --filter @p2p/desktop dist
+
+      - name: Attach artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          # The release is named after the tag; it's created if it doesn't exist.
+          files: |
+            packages/desktop/release/RivuletSend-Setup.exe
+            packages/desktop/release/RivuletSend-Portable.exe
+          fail_on_unmatched_files: true
