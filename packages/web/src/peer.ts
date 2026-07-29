@@ -25,8 +25,10 @@ import { getIceServers, primeIceServers } from "./iceConfig";
 // Same-origin in production (Caddy proxies /ws); wss:// vs ws:// follows the
 // page protocol, so the prebuilt image needs no domain baked in. Overridden by
 // VITE_SIGNALING_URL (dev compose); `vite dev` uses the local signaling port.
+// `||`, not `??`: an empty (declared-but-unset) build arg inlines "", which `??`
+// would keep — `new WebSocket("")` throws. `||` falls through to the origin.
 const DEFAULT_SIGNALING_URL =
-  import.meta.env.VITE_SIGNALING_URL ??
+  import.meta.env.VITE_SIGNALING_URL ||
   (import.meta.env.DEV || typeof window === "undefined"
     ? "ws://localhost:8080"
     : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`);

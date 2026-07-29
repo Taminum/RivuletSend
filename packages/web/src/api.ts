@@ -7,8 +7,11 @@
 // baked in. A build-time VITE_API_URL still wins (the dev docker-compose runs
 // the API on a separate port); `vite dev` has no proxy either, so fall back to
 // the local API port there.
+// `||`, not `??`: a Docker build arg that's declared but left empty inlines an
+// empty string, and `"" ?? x` keeps the empty string (defeating the fallback and
+// making the app POST to a path with no /api prefix). `||` treats "" as "unset".
 export const API_URL =
-  import.meta.env.VITE_API_URL ??
+  import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV || typeof window === "undefined"
     ? "http://localhost:8081"
     : `${window.location.origin}/api`);
