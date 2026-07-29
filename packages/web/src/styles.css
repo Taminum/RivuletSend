@@ -1243,6 +1243,63 @@ textarea.input {
   }
 }
 
+/* Phones: the fixed-width sidebar becomes a bottom nav bar, and the main area
+   takes the full width instead of being squeezed into a sliver beside it. */
+@media (max-width: 640px) {
+  .sidebar,
+  .sidebar.collapsed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
+    flex-direction: row;
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    border-right: none;
+    border-top: 1px solid var(--border);
+    z-index: 50;
+    transition: none;
+  }
+  /* No brand/collapse/spacer in a bottom bar. */
+  .brand,
+  .sidebar-spacer {
+    display: none;
+  }
+  /* Promote the nav's children so every item (incl. the sibling Settings
+     button) is an equal-width cell in the row. */
+  .nav {
+    display: contents;
+  }
+  .sidebar .nav-item {
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+    justify-content: center;
+    padding: 8px 2px 7px;
+    border-radius: 0;
+    font-size: 10.5px;
+  }
+  /* Labels stay under the icons even if the sidebar was left "collapsed". */
+  .sidebar.collapsed .nav-item span {
+    display: block;
+  }
+
+  .main-header {
+    flex-wrap: wrap;
+    padding: 16px 16px 12px;
+    gap: 10px;
+  }
+  .main-header h1 {
+    font-size: 19px;
+  }
+  /* Full-width content, with room to clear the fixed bottom bar. */
+  .main-body {
+    padding: 0 16px calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* Advanced-options disclosure */
 .adv {
   border: 1px solid var(--rs-border);
