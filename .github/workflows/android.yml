@@ -63,12 +63,16 @@ jobs:
         working-directory: packages/android
         run: sed -i 's/minSdkVersion = 23/minSdkVersion = 24/' android/build.gradle
 
-      - name: Build debug APK
+      # Release, not debug: a debug APK loads its JS from a Metro dev server, so
+      # it can't run standalone on a sideloaded phone ("Unable to load script").
+      # Release bundles the JS into the APK; the RN template signs release with
+      # the debug key, so it installs without a Play/release keystore.
+      - name: Build release APK
         working-directory: packages/android/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rivuletsend-debug-apk
-          path: packages/android/android/app/build/outputs/apk/debug/app-debug.apk
+          name: rivuletsend-apk
+          path: packages/android/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
