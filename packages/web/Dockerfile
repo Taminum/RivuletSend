@@ -7,7 +7,8 @@ FROM node:20-alpine AS builder
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
 WORKDIR /repo
 COPY . .
-RUN pnpm install --frozen-lockfile
+# Only the web package + its deps — keep the React Native app's deps out of this image.
+RUN pnpm install --frozen-lockfile --filter "@p2p/web..."
 
 ARG VITE_API_URL=http://localhost:8081
 ARG VITE_SIGNALING_URL=ws://localhost:8080

@@ -13,3 +13,8 @@ p2p-transfer-plan.md
 
 # electron-builder output
 packages/desktop/release/
+
+# React Native app: generated native project + build artifacts
+packages/android/android/
+packages/android/ios/
+packages/android/.bundle/

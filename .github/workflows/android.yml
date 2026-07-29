@@ -1,0 +1,64 @@
+name: Android build
+
+# Build the Android APK in the cloud (the local machine stays free of the
+# Android SDK/Gradle). Produces a debug APK artifact to sideload onto a real
+# device for the Step 1 WebRTC/backpressure verification.
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+    paths:
+      - "packages/android/**"
+      - "packages/shared/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      # The android package was added without regenerating the root lockfile
+      # locally (kept off the dev machine's disk), so don't require it frozen.
+      - run: pnpm install --no-frozen-lockfile
+
+      # The native android/ tree isn't committed — generate it from the pinned RN
+      # template so it's canonical, then let autolinking pick up react-native-webrtc.
+      - name: Generate native android project
+        working-directory: packages/android
+        run: |
+          if [ ! -d android ]; then
+            npx --yes @react-native-community/cli@15 init RivuletSend \
+              --version 0.75.4 --directory /tmp/rs-native --skip-install --pm npm
+            cp -r /tmp/rs-native/android ./android
+          fi
+
+      - name: Build debug APK
+        working-directory: packages/android/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rivuletsend-debug-apk
+          path: packages/android/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

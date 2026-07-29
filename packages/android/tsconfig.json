@@ -1,0 +1,13 @@
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    // Consume @p2p/shared straight from its TS source, same as web/desktop.
+    "paths": {
+      "@p2p/shared": ["../shared/src/index.ts"]
+    }
+  },
+  "include": ["src", "App.tsx", "index.js"]
+}

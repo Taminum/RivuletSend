@@ -14,7 +14,9 @@ RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
 WORKDIR /repo
 COPY . .
 
-RUN pnpm install --frozen-lockfile
+# Only the backend packages + their deps — not the whole workspace (which now
+# includes the React Native app, whose deps have no business in a server image).
+RUN pnpm install --frozen-lockfile --filter "@p2p/api..." --filter "@p2p/signaling..."
 # Generate needs DATABASE_URL to exist (not to connect) — a placeholder is fine.
 RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" \
     pnpm --filter @p2p/api exec prisma generate
