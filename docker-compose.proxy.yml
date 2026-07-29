@@ -1,0 +1,20 @@
+# Overlay for running BEHIND an existing reverse proxy (Nginx Proxy Manager,
+# Traefik, another nginx, ...) that already owns ports 80/443 and terminates
+# TLS. Layer it on top of the prod stack:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.proxy.yml up -d
+#
+# Instead of publishing 80/443 and fetching its own certificate, the internal
+# Caddy serves plain HTTP on a single loopback port (RS_HTTP_PORT, default
+# 8088). Point your proxy's upstream at 127.0.0.1:<port> with websockets
+# enabled — the path routing (/api, /ws, /) still happens inside Caddy, so one
+# upstream is all the outer proxy needs.
+services:
+  caddy:
+    # `!override` replaces the base list instead of appending to it, so 80/443
+    # are no longer published — only the loopback HTTP port.
+    ports: !override
+      - "127.0.0.1:${RS_HTTP_PORT:-8088}:80"
+    # HTTP-only Caddyfile; no cert volumes needed without TLS.
+    volumes: !override
+      - ./deploy/Caddyfile.http:/etc/caddy/Caddyfile:ro

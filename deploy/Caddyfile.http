@@ -1,0 +1,22 @@
+# HTTP-only variant for running BEHIND an existing reverse proxy (Nginx Proxy
+# Manager, Traefik, another nginx, ...) that already terminates TLS. Same path
+# routing as the default Caddyfile, but it listens on plain :80 with no domain
+# and no Let's Encrypt — the outer proxy owns the certificate.
+:80 {
+	encode gzip
+
+	# One origin: /api and /ws are same-site with the app so the SameSite=Lax
+	# session cookie is attached. handle_path strips /api so the API sees its
+	# own routes.
+	handle_path /api/* {
+		reverse_proxy api:8081
+	}
+
+	handle /ws {
+		reverse_proxy signaling:8080
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}
