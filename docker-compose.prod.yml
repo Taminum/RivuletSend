@@ -1,6 +1,9 @@
 # Production stack behind Caddy (automatic HTTPS).
 #   deploy/install.sh writes .env and runs:
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml pull && ... up -d
+# The api/signaling/web images are prebuilt in CI and pulled from GHCR — nothing
+# compiles on the server. Update with:
+#   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 #
 # Only Caddy publishes ports. Postgres, the API and signaling are reachable
 # only on the internal compose network — nothing but 80/443 is exposed.
@@ -21,9 +24,9 @@ services:
       retries: 10
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+    # Prebuilt in CI and pulled — no compiling on the server. Override the tag
+    # with RS_IMAGE_TAG in .env to pin a specific release instead of latest.
+    image: ghcr.io/taminum/rivuletsend-backend:${RS_IMAGE_TAG:-latest}
     restart: unless-stopped
     # Apply migrations, then start.
     command: sh -c "pnpm --filter @p2p/api exec prisma migrate deploy && node packages/api/dist/server.js"
@@ -45,9 +48,8 @@ services:
         condition: service_healthy
 
   signaling:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+    # Same backend image as the API, different command.
+    image: ghcr.io/taminum/rivuletsend-backend:${RS_IMAGE_TAG:-latest}
     restart: unless-stopped
     command: node packages/signaling/dist/server.js
     environment:
@@ -60,18 +62,12 @@ services:
       - api
 
   web:
-    build:
-      context: .
-      dockerfile: packages/web/Dockerfile
-      # VITE_* values are inlined at BUILD time — they are the URLs the
-      # visitor's browser will call, i.e. the public domain, not service names.
-      args:
-        VITE_API_URL: https://${RS_DOMAIN}/api
-        VITE_SIGNALING_URL: wss://${RS_DOMAIN}/ws
-        VITE_STUN_URL: ${STUN_URL:-stun:stun.l.google.com:19302}
-        VITE_TURN_URL: ${TURN_URL:-}
-        VITE_TURN_USERNAME: ${TURN_USERNAME:-}
-        VITE_TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
+    # Prebuilt, domain-agnostic: the bundle derives the API/signaling URLs from
+    # the browser's own origin at runtime (Caddy proxies /api and /ws on this
+    # same domain), so one image works for every deployment — nothing is baked
+    # in at build time. An external static TURN relay is still configured via the
+    # API's /turn-credentials, not the bundle.
+    image: ghcr.io/taminum/rivuletsend-web:${RS_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       - api

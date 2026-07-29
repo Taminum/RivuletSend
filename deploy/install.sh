@@ -302,14 +302,14 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "^Status: 
   fi
 fi
 
-# --- Build and start ---------------------------------------------------------
+# --- Pull and start ----------------------------------------------------------
 
-bold "Building and starting the stack (first run takes a few minutes)"
-# Disable provenance/SBOM attestations. They are useless for a local deploy and
-# their final "resolving provenance for metadata file" step reaches out to the
-# registry for base-image metadata, where it can hang for a long time.
-export BUILDX_NO_DEFAULT_ATTESTATIONS=1
-docker compose -f docker-compose.prod.yml up -d --build
+# The app images (api/signaling/web) are prebuilt in CI and published to GHCR,
+# so the server only downloads them — no pnpm install, no tsc, no vite build on
+# the VPS. This is what makes install/update fast even on a small machine.
+bold "Pulling images and starting the stack"
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 
 # --- Verify ------------------------------------------------------------------
 
@@ -359,5 +359,7 @@ Manage it with:
   docker compose -f docker-compose.prod.yml logs -f
   docker compose -f docker-compose.prod.yml down
 
-Update to the latest version by re-running this installer.
+Update to the latest version (fast — just pulls the new images):
+  cd $INSTALL_DIR && git pull
+  docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 EOF

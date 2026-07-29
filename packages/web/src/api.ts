@@ -1,7 +1,17 @@
 // Typed client for the accounts API. All requests send the session cookie
 // (credentials: "include"); the API allows this origin with CORS credentials.
 
-export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8081";
+// In production the API is same-origin behind the reverse proxy (Caddy proxies
+// /api), so derive it from the current origin. That keeps the built web image
+// domain-agnostic — one prebuilt image serves any deployment, no VITE_API_URL
+// baked in. A build-time VITE_API_URL still wins (the dev docker-compose runs
+// the API on a separate port); `vite dev` has no proxy either, so fall back to
+// the local API port there.
+export const API_URL =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV || typeof window === "undefined"
+    ? "http://localhost:8081"
+    : `${window.location.origin}/api`);
 
 export interface ApiUser {
   id: string;

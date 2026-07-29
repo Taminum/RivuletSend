@@ -22,7 +22,14 @@ import {
 } from "./fileTransfer";
 import { getIceServers, primeIceServers } from "./iceConfig";
 
-const DEFAULT_SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL ?? "ws://localhost:8080";
+// Same-origin in production (Caddy proxies /ws); wss:// vs ws:// follows the
+// page protocol, so the prebuilt image needs no domain baked in. Overridden by
+// VITE_SIGNALING_URL (dev compose); `vite dev` uses the local signaling port.
+const DEFAULT_SIGNALING_URL =
+  import.meta.env.VITE_SIGNALING_URL ??
+  (import.meta.env.DEV || typeof window === "undefined"
+    ? "ws://localhost:8080"
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`);
 
 // How long a dropped connection may take to recover via ICE restart before the
 // transfer is given up as failed. WebRTC uses "disconnected" for a blip that
