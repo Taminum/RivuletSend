@@ -1402,8 +1402,16 @@ textarea.input {
 }
 
 .btn-ghost.btn-sm,
-a.btn-ghost.btn-sm {
+a.btn-ghost.btn-sm,
+a.btn-primary.btn-sm {
   text-decoration: none;
+}
+
+.download-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 /* ---------- Feedback-round additions ---------- */

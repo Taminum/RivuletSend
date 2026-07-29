@@ -7,9 +7,9 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "icons": "node build/gen-icons.mjs",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win nsis",
-    "portable": "electron-builder --win portable"
+    "dist": "electron-builder --win nsis portable"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -18,12 +18,25 @@
   "build": {
     "appId": "com.rivuletsend.app",
     "productName": "RivuletSend",
-    "files": ["main.js", "preload.js", "setup.html"],
+    "icon": "build/icon.ico",
+    "files": ["main.js", "preload.js", "setup.html", "assets/**/*"],
+    "directories": {
+      "output": "release"
+    },
     "win": {
-      "target": "nsis"
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RivuletSend",
+      "artifactName": "RivuletSend-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "RivuletSend-${version}-portable.exe"
+      "artifactName": "RivuletSend-Portable.${ext}"
     }
   }
 }

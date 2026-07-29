@@ -6,12 +6,14 @@ import { DisplaySettings } from "./DisplaySettings";
 import { NotificationsSettings } from "./NotificationsSettings";
 import { AutoSaveSettings } from "./AutoSaveSettings";
 import { PairedDevices } from "./PairedDevices";
+import { DesktopAppCard } from "./DesktopAppCard";
 
 export function SettingsView() {
   const { user, logout } = useAuth();
 
   return (
     <div className="view">
+      <DesktopAppCard />
       <AccentPicker />
       <DisplaySettings />
       <NotificationsSettings />

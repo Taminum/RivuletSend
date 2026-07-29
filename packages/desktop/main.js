@@ -3,21 +3,22 @@
 // BrowserWindow unmodified. On top of that we expose native folder IPC so the
 // receiver can write a real folder tree to disk — no File System Access API
 // limits, no zip fallback.
-const { app, BrowserWindow, ipcMain, dialog, Notification, shell, Menu, Tray, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Notification, shell, Menu, Tray, nativeImage, nativeTheme } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
+
+// Brand owl, used for the window/taskbar and the tray. Packed into the asar
+// under assets/ so it resolves at runtime (build/ is buildResources and isn't
+// shipped inside the app).
+const ICON_PATH = path.join(__dirname, "assets", "icon.png");
+const TRAY_ICON_PATH = path.join(__dirname, "assets", "tray.png");
 
 let mainWindow = null;
 let tray = null;
 // Distinguishes "user closed the window" (hide to tray) from "user chose Quit"
 // (actually exit). See the window 'close' handler.
 let isQuitting = false;
-
-// Tray icon (accent-purple disc), embedded as a data URL so there's no asset
-// file to resolve inside the asar at runtime.
-const TRAY_ICON =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA5ElEQVR4nM2XsQ3EIAxFU7ACK9wu7II3MEtlBmbIDKm9wEWRjMQRwiEEmOI3UeA/bANmQ6BNUi2DNAIZBLII5FiWv+lRAIpNPAJ9/8jzv6oXwD3ZWWGc6uSxzQB3OPcG41R7KTVv5h8EOjqYBx08ZxWA7mweQzwikQPoEfZSOooAdqB5kH0DUI3V3rI7VA5gxuofUYgBag6ZXvIpgJ5oHqRjACMAYGKAmfn/qYMA4AQA3FIA4ikQL0LxbSh+EC1xFItfRuLX8RINyRItmXhTukRbnhamyMMk3aJiT7NcaqY/TofpAiUp/hhph2gUAAAAAElFTkSuQmCC";
 
 // --- Which server to load ---
 //
@@ -131,6 +132,7 @@ function createWindow() {
     width: 1120,
     height: 780,
     backgroundColor: "#121214",
+    icon: ICON_PATH,
     show: !startHidden, // launched by the login item -> stay in the tray
     autoHideMenuBar: true, // clean chrome; press Alt for the menu
     webPreferences: {
@@ -164,7 +166,7 @@ function showWindow() {
 }
 
 function createTray() {
-  const icon = nativeImage.createFromDataURL(TRAY_ICON);
+  const icon = nativeImage.createFromPath(TRAY_ICON_PATH);
   tray = new Tray(icon);
   tray.setToolTip("RivuletSend — running in the background");
   tray.setContextMenu(
@@ -220,6 +222,10 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", showWindow);
 
   app.whenReady().then(() => {
+    // The app is dark end-to-end; force the dark theme so Windows draws the
+    // native title bar dark too (otherwise it defaults to a light/white bar that
+    // clashes with the #121214 chrome).
+    nativeTheme.themeSource = "dark";
     buildMenu();
     createTray();
     createWindow();
