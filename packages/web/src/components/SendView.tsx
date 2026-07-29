@@ -13,7 +13,7 @@ import { PeerBeam } from "./PeerBeam";
 import { TransferSpeedometer } from "./TransferSpeedometer";
 import { TrustPanel } from "./send/TrustPanel";
 import { RecentActivityPanel } from "./send/RecentActivityPanel";
-import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon } from "../icons";
+import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon, ShareIcon } from "../icons";
 
 type Mode = "files" | "text";
 type NavTarget = "contacts" | "settings";
@@ -122,6 +122,24 @@ export function SendView({
 
   // --- Derived transfer state (meaningful only once a code exists) ---
   const joinUrl = code ? `${window.location.origin}${window.location.pathname}#receive=${code}` : "";
+
+  // Native OS share sheet for the code + join link. Deliberately never carries
+  // the passphrase — that has to travel a separate channel (see the E2EE work),
+  // and the Share button is hidden entirely when a passphrase is set.
+  async function shareCode() {
+    try {
+      await navigator.share({
+        title: "RivuletSend",
+        text: `Here's a file for you — code: ${code}`,
+        url: joinUrl,
+      });
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") {
+        /* real failures here are rare and not worth surfacing as an error
+           banner — Copy is right next to it as a working fallback */
+      }
+    }
+  }
   const allDone = isFolder
     ? folders.length > 0 && folders.every((f) => f.done || f.failed)
     : transfers.length > 0 && transfers.every((t) => t.size > 0 && t.transferred >= t.size);
@@ -151,6 +169,11 @@ export function SendView({
             </>
           )}
         </button>
+        {typeof navigator.share === "function" && !passphrase && (
+          <button className="btn btn-ghost btn-sm" onClick={shareCode}>
+            <ShareIcon size={14} /> Share
+          </button>
+        )}
       </div>
       <div className="qr-block">
         <QrCode text={joinUrl} size={128} />
