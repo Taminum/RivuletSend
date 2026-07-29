@@ -53,6 +53,22 @@ jobs:
             cp -r /tmp/rs-native/android ./android
           fi
 
+      # pnpm hoists deps to the workspace root, but the RN template's gradle
+      # files hardcode project-local ../node_modules paths. Repoint them at the
+      # actual (hoisted) locations so autolinking + the RN gradle plugin resolve.
+      - name: Fix RN gradle paths for the pnpm monorepo
+        working-directory: packages/android
+        run: |
+          resolve() { node --print "require('path').dirname(require.resolve('$1/package.json'))"; }
+          RN_GRADLE_PLUGIN=$(resolve @react-native/gradle-plugin)
+          RN_DIR=$(resolve react-native)
+          CODEGEN_DIR=$(resolve @react-native/codegen)
+          CLI_FILE=$(node --print "require.resolve('@react-native-community/cli/build/bin.js')")
+          echo "gradle-plugin: $RN_GRADLE_PLUGIN"
+          echo "react-native:  $RN_DIR"
+          perl -0pi -e "s|includeBuild\\(\"\\.\\./node_modules/\\@react-native/gradle-plugin\"\\)|includeBuild(\"$RN_GRADLE_PLUGIN\")|g" android/settings.gradle
+          perl -0pi -e "s|^react \\{|react {\n    reactNativeDir = file(\"$RN_DIR\")\n    codegenDir = file(\"$CODEGEN_DIR\")\n    cliFile = file(\"$CLI_FILE\")|m" android/app/build.gradle
+
       - name: Build debug APK
         working-directory: packages/android/android
         run: ./gradlew assembleDebug --no-daemon
