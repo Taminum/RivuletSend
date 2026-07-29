@@ -15,12 +15,9 @@
   --rs-radius-md: 14px;
   --rs-radius-sm: 10px;
 
-  /* --- RivuletSend 2.0: glassmorphism + neon --- */
-  --rs-glass-bg: rgba(28, 28, 32, 0.65);
-  --rs-glass-border: rgba(255, 255, 255, 0.08);
-  --rs-glass-blur: blur(16px);
-  --rs-neon-glow: 0 0 24px rgba(124, 109, 242, 0.25);
-  --rs-amber: #fa8a00; /* neon accent end (progress, brand glow) */
+  /* The one deliberate glow, used in exactly one place: the brand logotype
+     (see .logo-mark). Everything else stays flat. */
+  --rs-logo-glow: 0 0 18px rgba(124, 109, 242, 0.4), 0 0 9px rgba(250, 138, 0, 0.28);
   --rs-font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
   --rs-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 
@@ -118,8 +115,8 @@ a {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  /* Amber–violet glow around the Rivulet owl. */
-  box-shadow: 0 0 18px rgba(124, 109, 242, 0.4), 0 0 9px rgba(250, 138, 0, 0.28);
+  /* The one deliberate brand glow. */
+  box-shadow: var(--rs-logo-glow);
 }
 
 .logo-mark img {
@@ -134,11 +131,7 @@ a {
   flex: 1;
   overflow: hidden;
   white-space: nowrap;
-  /* Juicy amber–violet wordmark. */
-  background: linear-gradient(90deg, var(--rs-accent-soft), var(--rs-amber));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--rs-text);
 }
 
 .collapse-btn {
@@ -229,10 +222,12 @@ a {
 
 .view {
   max-width: 680px;
+  margin: 0 auto;
 }
 
 .view.wide {
   max-width: 760px;
+  margin: 0 auto;
 }
 
 /* ---------- Segmented control ---------- */
@@ -263,54 +258,21 @@ a {
 
 /* ---------- Dropzone ---------- */
 .dropzone {
-  border: 1px solid var(--rs-glass-border);
+  border: 2px dashed var(--rs-border);
   border-radius: 24px;
-  background: var(--rs-glass-bg);
-  -webkit-backdrop-filter: var(--rs-glass-blur);
-  backdrop-filter: var(--rs-glass-blur);
+  background: transparent;
   padding: 52px 24px;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.dropzone:hover {
-  border-color: color-mix(in srgb, var(--rs-accent), transparent 55%);
-  box-shadow: var(--rs-neon-glow);
-}
-
+.dropzone:hover,
 .dropzone.drag-over {
   border-color: var(--rs-accent);
-  background: color-mix(in srgb, var(--rs-accent), var(--rs-glass-bg) 84%);
-  animation: dz-neon 1.4s ease-in-out infinite;
-}
-
-/* Neon pulse around the contour while dragging over. */
-@keyframes dz-neon {
-  0%,
-  100% {
-    box-shadow: 0 0 20px rgba(124, 109, 242, 0.22);
-  }
-  50% {
-    box-shadow: 0 0 36px rgba(124, 109, 242, 0.5);
-  }
-}
-
-.dropzone.drag-over .dz-icon {
-  animation: dz-pulse 1s ease-in-out infinite;
-}
-
-@keyframes dz-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.14);
-  }
 }
 
 .dz-icon {
@@ -688,15 +650,13 @@ textarea.input {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--rs-accent), var(--rs-amber));
+  background: var(--rs-accent);
   border-radius: 999px;
-  box-shadow: 0 0 10px rgba(124, 109, 242, 0.55);
   transition: width 0.1s linear;
 }
 
 .progress-fill.done {
   background: var(--green);
-  box-shadow: 0 0 10px rgba(62, 213, 152, 0.5);
 }
 
 /* ---------- P2P connection visualizer (PeerBeam) ---------- */
@@ -730,12 +690,9 @@ textarea.input {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--rs-glass-bg);
-  -webkit-backdrop-filter: var(--rs-glass-blur);
-  backdrop-filter: var(--rs-glass-blur);
-  border: 1px solid var(--rs-glass-border);
+  background: var(--surface-2);
+  border: 1px solid var(--rs-border);
   color: var(--rs-accent-soft);
-  box-shadow: var(--rs-neon-glow);
 }
 
 .pb-label {
@@ -748,7 +705,7 @@ textarea.input {
   flex: 1;
   height: 2px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--rs-accent), var(--rs-amber));
+  background: var(--rs-accent);
   opacity: 0.3;
   transition: opacity 0.25s;
 }
@@ -761,8 +718,7 @@ textarea.input {
   height: 7px;
   margin-top: -3.5px;
   border-radius: 50%;
-  background: var(--rs-amber);
-  box-shadow: 0 0 8px var(--rs-amber);
+  background: var(--rs-accent-soft);
   opacity: 0;
 }
 
@@ -790,7 +746,6 @@ textarea.input {
 /* Transferring: light up the beam and stream packets across it. */
 .peerbeam.transferring .pb-beam {
   opacity: 0.95;
-  box-shadow: 0 0 10px rgba(124, 109, 242, 0.5);
 }
 
 .peerbeam.transferring .pb-status {
@@ -848,11 +803,7 @@ textarea.input {
   font-size: 26px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  background: linear-gradient(90deg, var(--rs-accent-soft), var(--rs-amber));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 0 22px rgba(124, 109, 242, 0.28);
+  color: var(--rs-accent-soft);
 }
 
 .speed-eta {
@@ -1256,6 +1207,7 @@ textarea.input {
   align-items: flex-start;
   gap: 24px;
   max-width: 1280px;
+  margin: 0 auto;
 }
 
 .send-main {
@@ -1421,7 +1373,7 @@ textarea.input {
 
 .recent-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--rs-accent), var(--rs-amber));
+  background: var(--rs-accent);
   border-radius: 999px;
   transition: width 0.1s linear;
 }

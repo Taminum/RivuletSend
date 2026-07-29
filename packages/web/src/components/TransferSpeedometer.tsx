@@ -20,7 +20,7 @@ function Sparkline({ data }: { data: number[] }) {
       <polyline
         points={points}
         fill="none"
-        stroke="var(--rs-amber)"
+        stroke="var(--rs-accent-soft)"
         strokeWidth="1.5"
         strokeLinejoin="round"
         strokeLinecap="round"
