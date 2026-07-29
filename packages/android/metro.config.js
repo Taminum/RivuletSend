@@ -16,6 +16,19 @@ const config = {
     ],
     // pnpm symlinks packages; Metro must follow them to the real files.
     unstable_enableSymlinks: true,
+    // @p2p/shared is TS authored in ESM style ("./roomCode.js" importing
+    // roomCode.ts). TS/Vite/node map .js->.ts, but Metro doesn't — so on a failed
+    // relative .js import, retry without the extension to hit the .ts source.
+    resolveRequest: (context, moduleName, platform) => {
+      try {
+        return context.resolveRequest(context, moduleName, platform);
+      } catch (err) {
+        if (/^\.\.?\//.test(moduleName) && moduleName.endsWith('.js')) {
+          return context.resolveRequest(context, moduleName.slice(0, -3), platform);
+        }
+        throw err;
+      }
+    },
   },
 };
 
