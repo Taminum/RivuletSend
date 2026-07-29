@@ -58,6 +58,11 @@ jobs:
       # @p2p/android, so pnpm symlinks them into packages/android/node_modules and
       # the RN template's default ../node_modules paths resolve as-is.
 
+      # react-native-webrtc requires minSdk 24; the RN template defaults to 23.
+      - name: Bump minSdk for react-native-webrtc
+        working-directory: packages/android
+        run: sed -i 's/minSdkVersion = 23/minSdkVersion = 24/' android/build.gradle
+
       - name: Build debug APK
         working-directory: packages/android/android
         run: ./gradlew assembleDebug --no-daemon
