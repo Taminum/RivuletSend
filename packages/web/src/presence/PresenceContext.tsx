@@ -424,18 +424,47 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       }
     };
 
-    void (async () => {
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+
+    const connect = async () => {
       try {
         const { token } = await api.wsToken();
         if (cancelled) return;
         await peer.connectAuthenticated(token);
+        attempts = 0; // authenticated cleanly — reset the backoff
       } catch {
         if (!cancelled) setOnline(false);
+        scheduleReconnect();
       }
-    })();
+    };
+
+    const scheduleReconnect = () => {
+      if (cancelled || reconnectTimer) return;
+      const delay = Math.min(1000 * 2 ** attempts, 15_000);
+      attempts += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void connect();
+      }, delay);
+    };
+
+    // The presence socket dropped (proxy idle-timeout, mobile network switch, a
+    // backgrounded tab waking): go offline and reconnect with backoff, so the UI
+    // stops showing a stale "online" and sends work again once we're back.
+    peer.onSignalingClosed = () => {
+      if (cancelled) return;
+      setOnline(false);
+      setOnlineContacts(new Set());
+      setOnlineDevices(new Set());
+      scheduleReconnect();
+    };
+
+    void connect();
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       peer.close();
       peerRef.current = null;
       setOnline(false);

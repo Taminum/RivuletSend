@@ -30,6 +30,8 @@ import {
 
 const wss = new WebSocketServer({ port: env.PORT });
 
+type AliveSocket = WebSocket & { isAlive?: boolean };
+
 function send(socket: WebSocket, message: ServerToClientMessage): void {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(message));
@@ -92,6 +94,12 @@ function notifyOwnSessions(userId: string, exclude: WebSocket, deviceId: string,
 
 wss.on("connection", (socket, req) => {
   const ip = getClientIp(socket, req);
+
+  // Heartbeat liveness (see the interval below).
+  (socket as AliveSocket).isAlive = true;
+  socket.on("pong", () => {
+    (socket as AliveSocket).isAlive = true;
+  });
 
   socket.on("message", async (raw) => {
     let message: ClientToServerMessage;
@@ -263,6 +271,30 @@ wss.on("connection", (socket, req) => {
   socket.on("close", handleDisconnect);
   socket.on("error", handleDisconnect);
 });
+
+// --- Heartbeat: keep proxied WebSockets alive and reap dead ones ---
+// Reverse proxies (nginx / Nginx Proxy Manager) close a WebSocket left idle for
+// ~60s. A presence connection is idle most of the time, so without a heartbeat
+// the proxy silently drops it — the client keeps thinking it's online while its
+// calls go nowhere. Pinging every 30s keeps the connection alive through the
+// proxy (traffic in both directions) and detects clients that vanished.
+const HEARTBEAT_MS = 30_000;
+const heartbeat = setInterval(() => {
+  for (const client of wss.clients as Set<AliveSocket>) {
+    if (client.isAlive === false) {
+      client.terminate();
+      continue;
+    }
+    client.isAlive = false;
+    try {
+      client.ping();
+    } catch {
+      /* socket already closing */
+    }
+  }
+}, HEARTBEAT_MS);
+heartbeat.unref?.();
+wss.on("close", () => clearInterval(heartbeat));
 
 console.log(`Signaling server listening on ws://localhost:${env.PORT}`);
 console.log(`Active rooms: ${roomCount()}`);

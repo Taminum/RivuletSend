@@ -89,6 +89,10 @@ export class PeerConnection {
   onFolderProgress: (progress: FolderProgress, direction: "send" | "receive") => void = () => {};
   onError: (message: string) => void = () => {};
   onAuthed: (userId: string) => void = () => {};
+  // The authenticated presence socket closed (proxy idle-timeout, network drop,
+  // backgrounding). Lets the presence layer reconnect rather than sit on a dead
+  // socket that still looks "online".
+  onSignalingClosed: () => void = () => {};
   onCallFailed: (reason: CallFailureReason) => void = () => {};
   onPresenceSnapshot: (online: string[]) => void = () => {};
   onPresenceUpdate: (userId: string, online: boolean) => void = () => {};
@@ -188,6 +192,9 @@ export class PeerConnection {
       if (ws.readyState === WebSocket.OPEN) doAuth();
       else ws.addEventListener("open", doAuth);
       ws.addEventListener("error", () => reject(new Error("Signaling connection failed")));
+      // Only the presence socket carries this: a close means we've silently gone
+      // offline and should reconnect. (Room-flow sockets close normally at end.)
+      ws.addEventListener("close", () => this.onSignalingClosed());
     });
   }
 
