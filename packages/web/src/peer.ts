@@ -539,9 +539,23 @@ export class PeerConnection {
 
   private setupPeerConnection(initiator: boolean): void {
     // Tear down any previous peer connection so the persistent socket can host
-    // sequential calls without leaking RTCPeerConnections.
-    this.channel?.close();
-    this.pc?.close();
+    // sequential calls without leaking RTCPeerConnections. Detach the handlers
+    // FIRST: this close is intentional (a re-send or a reconnect is replacing the
+    // connection), so it must not trip the disconnect/reconnect logic — otherwise
+    // a second send fires a spurious channel-close that can wedge the peer.
+    if (this.channel) {
+      this.channel.onclose = null;
+      this.channel.onmessage = null;
+      this.channel.onopen = null;
+      this.channel.close();
+    }
+    if (this.pc) {
+      this.pc.onconnectionstatechange = null;
+      this.pc.oniceconnectionstatechange = null;
+      this.pc.onicecandidate = null;
+      this.pc.ondatachannel = null;
+      this.pc.close();
+    }
     this.channel = null;
     this.pendingSignals = [];
 
