@@ -122,10 +122,15 @@ export function AppShell({
           {view === "contacts" && user && <PresenceStatus />}
         </header>
         <div className="main-body">
-          {view === "send" && (
+          {/* Send and Receive stay mounted and are just hidden when inactive, so
+              their transfer session (peer connection) survives navigating to
+              another tab mid-transfer instead of being torn down. */}
+          <div hidden={view !== "send"}>
             <SendView mode={sendMode} onComplete={recordComplete} onNavigate={setView} />
-          )}
-          {view === "receive" && <ReceiveView onComplete={recordComplete} />}
+          </div>
+          <div hidden={view !== "receive"}>
+            <ReceiveView onComplete={recordComplete} />
+          </div>
           {view === "contacts" && <ContactsPanel />}
           {view === "history" && <HistoryPanel refreshKey={historyKey} />}
           {view === "settings" && <SettingsView />}
