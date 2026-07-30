@@ -38,6 +38,15 @@ const DEFAULT_SIGNALING_URL =
 // may self-heal, so we wait rather than failing on the first sign of trouble.
 const GRACE_MS = 30_000;
 
+// Full-reconnect (survive a TOTAL connection loss, not just an ICE blip): when
+// ICE-restart on the same connection can't recover it, the original caller
+// re-places the call over the still-live presence socket and both sides resume
+// from where they left off. Retried with backoff over roughly a two-minute
+// window before the transfer is finally declared failed.
+const RECONNECT_MAX_ATTEMPTS = 8;
+const RECONNECT_BASE_MS = 2_000;
+const RECONNECT_MAX_DELAY_MS = 20_000;
+
 // The single-file send currently in flight, so a reconnect can resume it.
 interface ActiveSend {
   id: string;
@@ -71,6 +80,14 @@ export class PeerConnection {
   // receiving an encrypted transfer (decrypt). null = no application-layer
   // encryption (DTLS still applies).
   private passphrase: string | null = null;
+  // Full-reconnect state. lastTarget is who to re-call (only the original caller
+  // does); fullReconnecting guards the retry loop; closing suppresses reconnect
+  // when we're intentionally tearing down.
+  private lastTarget: { kind: "device" | "contact"; id: string } | null = null;
+  private fullReconnecting = false;
+  private fullAttempts = 0;
+  private fullTimer: ReturnType<typeof setTimeout> | null = null;
+  private closing = false;
 
   // Set the E2EE passphrase for both roles. Never transmitted anywhere.
   setPassphrase(passphrase: string | null): void {
@@ -201,11 +218,13 @@ export class PeerConnection {
   // Places a codeless call to an online mutual contact. The resulting `ready`
   // (or `call-failed`) arrives via the persistent socket's message handler.
   callContact(targetUserId: string): void {
+    this.lastTarget = { kind: "contact", id: targetUserId };
     this.send({ type: "call", targetUserId });
   }
 
   // Codeless call to one of my own online paired devices (self-send).
   callDevice(targetDeviceId: string): void {
+    this.lastTarget = { kind: "device", id: targetDeviceId };
     this.send({ type: "call-device", targetDeviceId });
   }
 
@@ -344,10 +363,84 @@ export class PeerConnection {
     if (!this.reconnecting) return;
     this.reconnecting = false;
     this.graceTimer = null;
-    this.activeSend?.reject(new Error("connection_lost"));
+    // ICE-restart on the same connection didn't recover it. If a transfer is
+    // still active and we know who to call, escalate to a FULL reconnect (a
+    // fresh connection) and resume — rather than failing outright.
+    if (this.hasActiveTransfer() && this.lastTarget) {
+      this.beginFullReconnect();
+      return;
+    }
+    this.failTransfer("connection_lost");
+  }
+
+  private hasActiveTransfer(): boolean {
+    return this.activeSend !== null || this.receiver.hasInProgress();
+  }
+
+  // Terminal failure: reject an in-flight send, drop partial receives, notify.
+  private failTransfer(reason: string): void {
+    this.endFullReconnect();
+    this.activeSend?.reject(new Error(reason));
     this.activeSend = null;
-    this.receiver.failAll("connection_lost");
-    this.onDisconnected("connection_lost");
+    this.receiver.failAll(reason);
+    this.onDisconnected(reason);
+  }
+
+  // A total connection loss with a transfer still going. Keep the transfer state
+  // and try to rebuild a fresh connection to the same peer; the resume protocol
+  // then continues each side from its last contiguous seq.
+  private loseConnection(reason: string): void {
+    if (this.closing || this.fullReconnecting) return;
+    if (this.hasActiveTransfer() && this.lastTarget) this.beginFullReconnect();
+    else this.failTransfer(reason);
+  }
+
+  private beginFullReconnect(): void {
+    if (this.fullReconnecting) return;
+    this.fullReconnecting = true;
+    this.fullAttempts = 0;
+    this.reconnecting = false;
+    if (this.graceTimer) {
+      clearTimeout(this.graceTimer);
+      this.graceTimer = null;
+    }
+    this.activeSend?.aborter.abort(); // the pump remembers nextSeq
+    this.onReconnecting();
+    this.scheduleFullReconnect();
+  }
+
+  private scheduleFullReconnect(): void {
+    if (!this.fullReconnecting) return;
+    if (this.fullAttempts >= RECONNECT_MAX_ATTEMPTS) {
+      this.fullReconnecting = false;
+      this.failTransfer("connection_lost");
+      return;
+    }
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.fullAttempts, RECONNECT_MAX_DELAY_MS);
+    this.fullAttempts += 1;
+    this.fullTimer = setTimeout(() => this.attemptFullReconnect(), delay);
+  }
+
+  private attemptFullReconnect(): void {
+    this.fullTimer = null;
+    if (!this.fullReconnecting || !this.lastTarget) return;
+    // Only the original caller re-places the call; the answering side just waits
+    // for the resulting `ready`. Both keep retrying/waiting on the same schedule.
+    if (this.initiator) {
+      const t = this.lastTarget;
+      if (t.kind === "device") this.send({ type: "call-device", targetDeviceId: t.id });
+      else this.send({ type: "call", targetUserId: t.id });
+    }
+    this.scheduleFullReconnect();
+  }
+
+  private endFullReconnect(): void {
+    this.fullReconnecting = false;
+    this.fullAttempts = 0;
+    if (this.fullTimer) {
+      clearTimeout(this.fullTimer);
+      this.fullTimer = null;
+    }
   }
 
   // --- e2e-only hooks: exercise the resume protocol over the live channel.
@@ -361,7 +454,7 @@ export class PeerConnection {
   }
   _testForceFail(): void {
     this.reconnecting = true;
-    this.onGraceExpired();
+    this.failTransfer("connection_lost");
   }
   _testReceiveProgress(): { id: string; received: number; total: number; contiguousSeq: number }[] {
     return this.receiver.snapshot();
@@ -381,6 +474,12 @@ export class PeerConnection {
   }
 
   close(): void {
+    this.closing = true;
+    this.endFullReconnect();
+    if (this.graceTimer) {
+      clearTimeout(this.graceTimer);
+      this.graceTimer = null;
+    }
     this.channel?.close();
     this.pc?.close();
     this.ws?.close();
@@ -415,6 +514,9 @@ export class PeerConnection {
         this.onAuthed(message.userId);
         break;
       case "call-failed":
+        // Mid-reconnect the peer may be momentarily unreachable; keep retrying on
+        // the schedule rather than surfacing a hard failure.
+        if (this.fullReconnecting) break;
         this.onCallFailed(message.reason);
         break;
       case "presence-snapshot":
@@ -466,7 +568,8 @@ export class PeerConnection {
 
     pc.onconnectionstatechange = () => {
       // Real teardown only. Transient failures are handled via ICE state above.
-      if (pc.connectionState === "closed") this.onDisconnected("connection_closed");
+      // A close with a transfer still active escalates to a full reconnect.
+      if (pc.connectionState === "closed") this.loseConnection("connection_closed");
     };
 
     if (initiator) {
@@ -492,11 +595,23 @@ export class PeerConnection {
   private setupDataChannel(channel: RTCDataChannel): void {
     this.channel = channel;
     channel.binaryType = "arraybuffer";
-    channel.onopen = () => this.onConnected();
-    // A channel close during a reconnect attempt is not a hard failure — the ICE
-    // state machine + grace window decide the transfer's fate.
+    channel.onopen = () => {
+      if (this.fullReconnecting) {
+        // A fresh connection re-established mid-transfer: don't run the normal
+        // "connected" flush (which would re-send / advance the queue). Resume in
+        // place instead — the receiver asks the sender to continue from its last
+        // contiguous seq; a sending side just waits for that resume-request.
+        this.endFullReconnect();
+        this.onReconnected();
+        if (this.receiver.hasInProgress()) this.receiver.requestResume();
+        return;
+      }
+      this.onConnected();
+    };
+    // A channel close during either kind of reconnect is not a hard failure —
+    // the ICE grace window / full-reconnect loop decides the transfer's fate.
     channel.onclose = () => {
-      if (!this.reconnecting) this.onDisconnected("channel_closed");
+      if (!this.reconnecting && !this.fullReconnecting) this.loseConnection("channel_closed");
     };
     channel.onmessage = (event) => this.onChannelMessage(event.data);
   }

@@ -369,6 +369,13 @@ export class FileReceiver {
     }
   }
 
+  // Any file still being received? Used after a full disconnect to decide
+  // whether to attempt a resume (reconnect + continue) rather than give up.
+  hasInProgress(): boolean {
+    for (const file of this.files.values()) if (!file.failed) return true;
+    return false;
+  }
+
   // e2e-only: snapshot of in-progress receives, so a test can catch a transfer
   // mid-flight to interrupt it.
   snapshot(): { id: string; received: number; total: number; contiguousSeq: number }[] {
