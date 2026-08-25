@@ -19,7 +19,7 @@ import {
   type CompletedTransfer,
 } from "../transfers";
 
-export type CallStatus = "idle" | "connecting" | "connected";
+export type CallStatus = "idle" | "connecting" | "connected" | "reconnecting";
 export type { CompletedTransfer };
 
 // Per-contact phase while a (possibly multi-recipient) send queue runs.
@@ -185,6 +185,10 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         return next;
       });
     };
+    // Transfer-level reconnect (a dropped data channel recovering): surface it so
+    // the UI shows "Reconnecting…" instead of looking stalled.
+    peer.onReconnecting = () => setCallStatus("reconnecting");
+    peer.onReconnected = () => setCallStatus("connected");
     peer.onConnected = () => {
       setCallStatus("connected");
       // Flush the queued folder or files now that the channel is open, then

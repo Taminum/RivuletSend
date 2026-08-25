@@ -100,7 +100,11 @@ export function GlobalTransfers() {
     ) : null;
 
   const hasContent =
-    transfers.length > 0 || folders.length > 0 || callStatus === "connecting" || !!callError;
+    transfers.length > 0 ||
+    folders.length > 0 ||
+    callStatus === "connecting" ||
+    callStatus === "reconnecting" ||
+    !!callError;
   if (!hasContent || dismissed) {
     return (
       <>
@@ -124,6 +128,11 @@ export function GlobalTransfers() {
         {callStatus === "connecting" && (
           <div className="status-line" style={{ justifyContent: "flex-start", padding: "4px 0" }}>
             <PulseLine /> Connecting to your contact…
+          </div>
+        )}
+        {callStatus === "reconnecting" && (
+          <div className="status-line" style={{ justifyContent: "flex-start", padding: "4px 0" }}>
+            <PulseLine /> Reconnecting — resuming the transfer…
           </div>
         )}
         {callError && (
