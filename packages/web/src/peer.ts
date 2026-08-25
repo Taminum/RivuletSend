@@ -312,6 +312,10 @@ export class PeerConnection {
       this.sendChannelControl({ type: "resume-response", id, accepted: false, fromSeq: 0 });
       return;
     }
+    // Stop any pump already running (e.g. the proactive resume started on the
+    // reconnect channel-open) before starting one from the requested seq, so two
+    // pumps can't stream the same file at once.
+    s.aborter.abort();
     s.nextSeq = fromSeq;
     s.aborter = new AbortController();
     this.sendChannelControl({ type: "resume-response", id, accepted: true, fromSeq });
@@ -613,11 +617,23 @@ export class PeerConnection {
       if (this.fullReconnecting) {
         // A fresh connection re-established mid-transfer: don't run the normal
         // "connected" flush (which would re-send / advance the queue). Resume in
-        // place instead — the receiver asks the sender to continue from its last
-        // contiguous seq; a sending side just waits for that resume-request.
+        // place instead.
         this.endFullReconnect();
         this.onReconnected();
+        // Receiver side: ask the sender to continue from our last contiguous seq.
         if (this.receiver.hasInProgress()) this.receiver.requestResume();
+        // Sender side: proactively resume from the last acked seq rather than
+        // waiting for the receiver's resume-request — otherwise a lost/absent
+        // request would hang the send forever. The receiver dedupes anything it
+        // already has; its resume-request can still fast-forward (onResumeRequest
+        // aborts this pump first).
+        if (this.activeSend) {
+          const s = this.activeSend;
+          s.aborter.abort();
+          s.aborter = new AbortController();
+          s.nextSeq = s.ackedSeq + 1;
+          void this.pumpSend();
+        }
         return;
       }
       this.onConnected();
