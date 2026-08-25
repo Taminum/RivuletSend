@@ -48,6 +48,7 @@ export function SendView({
   const pendingFolderRef = useRef<FolderSelection | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const dropzoneRef = useRef<HTMLDivElement>(null);
 
   // Push the passphrase down to the session (never sent over the wire).
   useEffect(() => {
@@ -67,6 +68,26 @@ export function SendView({
       void sendFiles(p);
     }
   }, [connected, sendFiles, sendFolder]);
+
+  // Paste-to-send: Ctrl+V an image/file (e.g. a screenshot) to start a transfer.
+  // Only when the Send view is actually visible (it stays mounted-but-hidden on
+  // other tabs), on the files tab with no code yet, and not while typing in a field.
+  useEffect(() => {
+    if (mode !== "files" || code) return;
+    const onPaste = (e: ClipboardEvent) => {
+      if (dropzoneRef.current?.offsetParent == null) return; // hidden tab
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const pasted = Array.from(e.clipboardData?.files ?? []);
+      if (pasted.length) {
+        e.preventDefault();
+        void startWith(pasted);
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, code]);
 
   function toggleAdv() {
     const next = !advOpen;
@@ -275,6 +296,7 @@ export function SendView({
         ) : (
           <>
             <div
+              ref={dropzoneRef}
               className={`dropzone ${dragOver ? "drag-over" : ""}`}
               onClick={() => inputRef.current?.click()}
               onDragOver={(e) => {

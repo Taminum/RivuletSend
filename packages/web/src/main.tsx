@@ -21,3 +21,12 @@ void cleanupOrphanedOpfsFiles();
 // one, which the signaling server treats as a peer joining then leaving —
 // disturbing the room. The production build never double-invokes regardless.
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+
+// Register the service worker so the app is installable (own icon, no browser
+// chrome) and has an offline shell. Not in the desktop shell (it loads a remote
+// URL and has native chrome already). Failures are non-fatal.
+if ("serviceWorker" in navigator && !window.rivulet?.isDesktop) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
