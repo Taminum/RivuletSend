@@ -21,18 +21,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    try {
-      const { user } = await api.me();
-      setUser(user);
-    } catch (err) {
-      // Only a real auth failure (401) ends the session. A transient error — the
-      // API momentarily unreachable during a redeploy, a mobile network blip, a
-      // backgrounded tab waking — must NOT log the user out; keep the current
-      // session and let a later refresh confirm it. Clearing on any error was
-      // why auth "dropped" so often.
-      if (err instanceof ApiError && err.status === 401) setUser(null);
-    } finally {
-      setLoading(false);
+    // Only a real auth failure (401) ends the session. A transient error — the
+    // API momentarily unreachable during a redeploy, a mobile network blip, a
+    // backgrounded tab/app waking and re-checking — must NOT log the user out.
+    // Clearing on ANY error was why auth "dropped" so often. On a transient
+    // failure at startup, retry a few times (showing the loading state, not the
+    // login screen) before giving up without clearing the session.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const { user } = await api.me();
+        setUser(user);
+        setLoading(false);
+        return;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        if (attempt >= 3) {
+          setLoading(false); // give up quietly; keep whatever session we had
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
   }, []);
 
