@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type ApiUser } from "../api";
+import { api, ApiError, type ApiUser } from "../api";
 import { applyAccent, isAccentKey, type AccentKey } from "../theme";
 
 interface AuthState {
@@ -24,8 +24,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { user } = await api.me();
       setUser(user);
-    } catch {
-      setUser(null);
+    } catch (err) {
+      // Only a real auth failure (401) ends the session. A transient error — the
+      // API momentarily unreachable during a redeploy, a mobile network blip, a
+      // backgrounded tab waking — must NOT log the user out; keep the current
+      // session and let a later refresh confirm it. Clearing on any error was
+      // why auth "dropped" so often.
+      if (err instanceof ApiError && err.status === 401) setUser(null);
     } finally {
       setLoading(false);
     }
