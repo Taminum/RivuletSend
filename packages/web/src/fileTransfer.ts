@@ -527,7 +527,13 @@ export class FileReceiver {
         .catch((err) => {
           if (!file.failed) {
             file.failed = true;
-            this.onError(fileId, (err as Error)?.message === "bad_passphrase" ? "bad_passphrase" : "opfs_write_failed");
+            const reason =
+              err instanceof NotEnoughSpaceError
+                ? "not_enough_space"
+                : (err as Error)?.message === "bad_passphrase"
+                  ? "bad_passphrase"
+                  : "opfs_write_failed";
+            this.onError(fileId, reason);
           }
           throw err;
         });

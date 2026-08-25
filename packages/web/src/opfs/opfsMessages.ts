@@ -10,4 +10,4 @@ export type ToOpfsWorker =
 export type FromOpfsWorker =
   | { type: "ready" }
   | { type: "ok"; reqId: number; size?: number }
-  | { type: "error"; reqId: number | null; error: string };
+  | { type: "error"; reqId: number | null; error: string; quota?: boolean };

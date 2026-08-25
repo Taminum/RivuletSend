@@ -48,6 +48,10 @@ export class OpfsWriter {
   // Reject up front if the incoming transfer can't fit, rather than starting and
   // failing partway through.
   static async create(id: string, declaredSize: number): Promise<OpfsWriter> {
+    // Request persistent storage: without it the browser grants a best-effort,
+    // evictable quota that can be smaller than estimate() reports — the reason a
+    // large receive could fail mid-write. Granted once, then silent thereafter.
+    await navigator.storage.persist?.().catch(() => {});
     const { quota, usage } = await navigator.storage.estimate();
     if (typeof quota === "number" && typeof usage === "number") {
       const free = quota - usage;
@@ -136,12 +140,14 @@ export class OpfsWriter {
       this.pending.delete(msg.reqId);
       return;
     }
-    // error
+    // error — a real over-quota write surfaces as NotEnoughSpaceError so the UI
+    // shows "not enough space" rather than a generic save failure.
+    const err = msg.quota ? new NotEnoughSpaceError(0, 0) : new Error(msg.error);
     if (msg.reqId != null) {
-      this.pending.get(msg.reqId)?.reject(new Error(msg.error));
+      this.pending.get(msg.reqId)?.reject(err);
       this.pending.delete(msg.reqId);
     } else {
-      this.failAll(new Error(msg.error));
+      this.failAll(err);
     }
   }
 

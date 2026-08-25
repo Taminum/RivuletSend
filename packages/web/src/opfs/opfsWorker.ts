@@ -77,6 +77,12 @@ ctx.onmessage = async (event: MessageEvent<ToOpfsWorker>) => {
     }
   } catch (err) {
     const reqId = "reqId" in msg ? msg.reqId : null;
-    post({ type: "error", reqId, error: err instanceof Error ? err.message : String(err) });
+    // A write past the browser's actual OPFS quota (the estimate() pre-check is
+    // optimistic and can pass while the real write still fails). Flag it so the
+    // UI can say "not enough space" instead of a generic save error.
+    const quota =
+      (err instanceof DOMException && err.name === "QuotaExceededError") ||
+      (err instanceof Error && /quota/i.test(err.message));
+    post({ type: "error", reqId, error: err instanceof Error ? err.message : String(err), quota });
   }
 };
