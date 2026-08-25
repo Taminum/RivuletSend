@@ -12,11 +12,13 @@ import { SendIcon, FolderIcon } from "../icons";
 // view and available anywhere a "send to contact" shortcut is useful.
 export function ContactSendList({ onManageContacts }: { onManageContacts?: () => void }) {
   const { data } = useContacts();
-  const { online, isContactOnline, sendToContact, sendFolderToContact, callStatus } = usePresence();
+  const { online, isContactOnline, sendToContact, sendFolderToContact, callStatus, sendWhenOnline, cancelQueued, queuedForOnline } =
+    usePresence();
   const [query, setQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const targetRef = useRef<string | null>(null);
+  const whenOnlineRef = useRef(false);
 
   const accepted = data?.accepted ?? [];
   const filtered = useMemo(() => {
@@ -27,14 +29,18 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
     );
   }, [accepted, query]);
 
-  function pickFilesFor(userId: string) {
+  function pickFilesFor(userId: string, whenOnline = false) {
     targetRef.current = userId;
+    whenOnlineRef.current = whenOnline;
     fileInputRef.current?.click();
   }
 
   function onFilesChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    if (targetRef.current && files.length) sendToContact(targetRef.current, files);
+    if (targetRef.current && files.length) {
+      if (whenOnlineRef.current) sendWhenOnline("contact", targetRef.current, files);
+      else sendToContact(targetRef.current, files);
+    }
     e.target.value = "";
   }
 
@@ -98,6 +104,7 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
           <ul className="file-list">
             {filtered.map((c) => {
               const contactOnline = isContactOnline(c.user.id);
+              const queued = queuedForOnline.has(c.user.id);
               return (
                 <li key={c.user.id} className="file-row hoverable">
                   <Avatar id={c.user.id} name={contactName(c)} online={contactOnline} />
@@ -107,27 +114,47 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
                       {contactName(c)}
                     </span>
                     <span className={`file-sub ${contactOnline ? "online-tag" : ""}`}>
-                      {contactOnline ? "Online" : "Offline"}
+                      {queued && !contactOnline ? "Queued — sends when online" : contactOnline ? "Online" : "Offline"}
                     </span>
                   </span>
                   <span className="row-actions">
-                    <button
-                      className="icon-btn"
-                      disabled={!contactOnline || callStatus === "connecting"}
-                      title={contactOnline ? "Pick a folder — no code needed" : "Offline"}
-                      aria-label="Pick a folder"
-                      onClick={() => void pickFolderFor(c.user.id)}
-                    >
-                      <FolderIcon size={16} />
-                    </button>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      disabled={!contactOnline || callStatus === "connecting"}
-                      title={contactOnline ? "Send files — no code needed" : "Offline — can't send directly"}
-                      onClick={() => pickFilesFor(c.user.id)}
-                    >
-                      <SendIcon size={14} /> Send
-                    </button>
+                    {queued && !contactOnline ? (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => cancelQueued(c.user.id)}
+                        title="Cancel queued send"
+                      >
+                        Cancel
+                      </button>
+                    ) : contactOnline ? (
+                      <>
+                        <button
+                          className="icon-btn"
+                          disabled={callStatus === "connecting"}
+                          title="Pick a folder — no code needed"
+                          aria-label="Pick a folder"
+                          onClick={() => void pickFolderFor(c.user.id)}
+                        >
+                          <FolderIcon size={16} />
+                        </button>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={callStatus === "connecting"}
+                          title="Send files — no code needed"
+                          onClick={() => pickFilesFor(c.user.id)}
+                        >
+                          <SendIcon size={14} /> Send
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Queue files — they'll send automatically when this contact comes online"
+                        onClick={() => pickFilesFor(c.user.id, true)}
+                      >
+                        <SendIcon size={14} /> Send when online
+                      </button>
+                    )}
                   </span>
                 </li>
               );

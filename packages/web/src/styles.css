@@ -1520,6 +1520,41 @@ a.btn-primary.btn-sm {
   margin-top: 18px;
 }
 
+/* QR is a button (tap to enlarge) — strip the button chrome, keep the layout. */
+.qr-open {
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.qr-open:hover .muted {
+  color: var(--rs-accent-soft);
+}
+
+/* Full-screen enlarged QR for easy scanning from another phone. */
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
+}
+.qr-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #fff; /* light ground so the QR scans reliably */
+  border-radius: 16px;
+  padding: 24px 28px;
+  max-width: 92vw;
+}
+.qr-overlay-card .share-code.big {
+  color: #111;
+}
+
 .failed-tag {
   color: var(--red);
 }

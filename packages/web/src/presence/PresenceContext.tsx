@@ -43,6 +43,10 @@ interface PresenceValue {
   onlineDevices: Set<string>;
   isDeviceOnline: (deviceId: string) => boolean;
   sendToDevice: (deviceId: string, files: File[]) => void;
+  // Queue files for an offline contact/device and auto-send once it comes online.
+  sendWhenOnline: (kind: "contact" | "device", id: string, files: File[]) => void;
+  cancelQueued: (id: string) => void;
+  queuedForOnline: Set<string>;
   // Folder transfers over the presence channel (contact or own device).
   folders: FolderTransfer[];
   sendFolderToContact: (userId: string, folderName: string, entries: FolderEntry[]) => void;
@@ -99,6 +103,12 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
   // previous (already-drained) channel isn't mistaken for a real disconnect.
   const transitioningRef = useRef(false);
   const advanceRef = useRef<(fromOpenChannel: boolean) => void>(() => {});
+  // "Send when online": files staged for a target that's currently offline, and
+  // a ref-held flusher so the presence-update handlers (set up before the send
+  // callbacks exist) can trigger the send once the target appears.
+  const pendingOnlineRef = useRef<Map<string, { kind: "contact" | "device"; files: File[] }>>(new Map());
+  const flushPendingRef = useRef<(id: string) => void>(() => {});
+  const [queuedForOnline, setQueuedForOnline] = useState<Set<string>>(new Set());
 
   const [online, setOnline] = useState(false);
   const [callStatus, setCallStatus] = useState<CallStatus>("idle");
@@ -172,6 +182,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         else next.delete(userId);
         return next;
       });
+      if (isOnline) flushPendingRef.current(userId);
     };
     peer.onMyDevicesSnapshot = (ids) => {
       if (!cancelled) setOnlineDevices(new Set(ids));
@@ -184,6 +195,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         else next.delete(deviceId);
         return next;
       });
+      if (isOnline) flushPendingRef.current(deviceId);
     };
     // Transfer-level reconnect (a dropped data channel recovering): surface it so
     // the UI shows "Reconnecting…" instead of looking stalled.
@@ -547,6 +559,50 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     [online, startCurrent],
   );
 
+  // "Send when online": queue for an offline target and auto-send once it comes
+  // online. If it's already online, just send now.
+  const sendWhenOnline = useCallback(
+    (kind: "contact" | "device", id: string, files: File[]) => {
+      if (files.length === 0) return;
+      const alreadyOnline = kind === "device" ? onlineDevices.has(id) : onlineContacts.has(id);
+      if (alreadyOnline) {
+        if (kind === "device") sendToDevice(id, files);
+        else sendToContact(id, files);
+        return;
+      }
+      pendingOnlineRef.current.set(id, { kind, files });
+      setQueuedForOnline((prev) => new Set(prev).add(id));
+    },
+    [onlineDevices, onlineContacts, sendToDevice, sendToContact],
+  );
+
+  const cancelQueued = useCallback((id: string) => {
+    pendingOnlineRef.current.delete(id);
+    setQueuedForOnline((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // Drain the queued send for a target that just came online.
+  const flushPending = useCallback(
+    (id: string) => {
+      const p = pendingOnlineRef.current.get(id);
+      if (!p) return;
+      pendingOnlineRef.current.delete(id);
+      setQueuedForOnline((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (p.kind === "device") sendToDevice(id, p.files);
+      else sendToContact(id, p.files);
+    },
+    [sendToDevice, sendToContact],
+  );
+  flushPendingRef.current = flushPending;
+
   // Folder send over the presence channel (one target at a time). The folder is
   // flushed from pendingFolderRef once the channel opens.
   const sendFolder = useCallback(
@@ -591,6 +647,9 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
         onlineDevices,
         isDeviceOnline,
         sendToDevice,
+        sendWhenOnline,
+        cancelQueued,
+        queuedForOnline,
         folders,
         sendFolderToContact,
         sendFolderToDevice,

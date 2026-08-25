@@ -44,6 +44,7 @@ export function SendView({
   const [passphrase, setPassphraseInput] = useState("");
   const [burnAfterRead, setBurnAfterRead] = useState(false);
   const [advOpen, setAdvOpen] = useState(advPanelOpenSession);
+  const [qrOpen, setQrOpen] = useState(false);
   const pendingRef = useRef<File[]>([]);
   const pendingFolderRef = useRef<FolderSelection | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -196,10 +197,21 @@ export function SendView({
           </button>
         )}
       </div>
-      <div className="qr-block">
+      <button className="qr-block qr-open" onClick={() => setQrOpen(true)} title="Tap to enlarge">
         <QrCode text={joinUrl} size={128} />
-        <span className="muted">Scan to open the receive link on a phone</span>
-      </div>
+        <span className="muted">Scan to receive on a phone — tap to enlarge</span>
+      </button>
+      {qrOpen && (
+        <div className="qr-overlay" onClick={() => setQrOpen(false)} role="dialog" aria-label="Scan QR code">
+          <div className="qr-overlay-card" onClick={(e) => e.stopPropagation()}>
+            <QrCode text={joinUrl} size={280} />
+            <div className="share-code big" style={{ marginTop: 8 }}>{code}</div>
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setQrOpen(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: 20 }}>
         <PeerBeam state={!connected ? "waiting" : allDone ? "done" : "transferring"} />
       </div>
