@@ -43,7 +43,8 @@ const GRACE_MS = 30_000;
 // re-places the call over the still-live presence socket and both sides resume
 // from where they left off. Retried with backoff over roughly a two-minute
 // window before the transfer is finally declared failed.
-const RECONNECT_MAX_ATTEMPTS = 8;
+const RECONNECT_MAX_ATTEMPTS = 8; // real call attempts (initiator) before giving up
+const RECONNECT_MAX_TICKS = 16; // hard cap on retry ticks, so a waiting answerer that never gets re-called still gives up
 const RECONNECT_BASE_MS = 2_000;
 const RECONNECT_MAX_DELAY_MS = 20_000;
 
@@ -85,9 +86,14 @@ export class PeerConnection {
   // when we're intentionally tearing down.
   private lastTarget: { kind: "device" | "contact"; id: string } | null = null;
   private fullReconnecting = false;
-  private fullAttempts = 0;
+  private fullAttempts = 0; // real call attempts made (initiator)
+  private fullTicks = 0; // total retry ticks (also advances while waiting/ws-not-ready)
   private fullTimer: ReturnType<typeof setTimeout> | null = null;
   private closing = false;
+  // True on the persistent, authenticated presence connection (contact/device
+  // flow). Room-code transfers aren't persistent and can't be re-called, so they
+  // fail fast on a total loss instead of waiting to reconnect.
+  private isPersistent = false;
 
   // Set the E2EE passphrase for both roles. Never transmitted anywhere.
   setPassphrase(passphrase: string | null): void {
@@ -192,6 +198,7 @@ export class PeerConnection {
   // and resolves with the user's id. The socket stays open to receive incoming
   // calls and to place outgoing ones.
   connectAuthenticated(token: string): Promise<string> {
+    this.isPersistent = true;
     return new Promise((resolve, reject) => {
       const ws = this.connectSignaling();
       const onMessage = (event: MessageEvent) => {
@@ -277,14 +284,17 @@ export class PeerConnection {
   private async pumpSend(): Promise<void> {
     const s = this.activeSend;
     if (!s || !this.channel) return;
+    const aborter = s.aborter; // this pump's aborter; a newer pump replaces it
     const result = await streamFileBody(
       this.channel,
       s.id,
       s.file,
       (sent) => this.onSendProgress({ id: s.id, sent, total: s.file.size }),
-      { startSeq: s.nextSeq, signal: s.aborter.signal, crypto: s.crypto },
+      { startSeq: s.nextSeq, signal: aborter.signal, crypto: s.crypto },
     );
-    if (this.activeSend !== s) return; // superseded (failed / replaced)
+    // Superseded (transfer replaced) or a newer pump took over (aborter swapped):
+    // don't touch shared state the live pump now owns.
+    if (this.activeSend !== s || s.aborter !== aborter) return;
     if (result.completed) {
       sendControl(this.channel, { type: "file-end", id: s.id });
       this.activeSend = null;
@@ -368,9 +378,9 @@ export class PeerConnection {
     this.reconnecting = false;
     this.graceTimer = null;
     // ICE-restart on the same connection didn't recover it. If a transfer is
-    // still active and we know who to call, escalate to a FULL reconnect (a
-    // fresh connection) and resume — rather than failing outright.
-    if (this.hasActiveTransfer() && this.lastTarget) {
+    // still active on a re-callable (persistent) connection, escalate to a FULL
+    // reconnect (a fresh connection) and resume — rather than failing outright.
+    if (this.hasActiveTransfer() && this.canReconnect()) {
       this.beginFullReconnect();
       return;
     }
@@ -379,6 +389,13 @@ export class PeerConnection {
 
   private hasActiveTransfer(): boolean {
     return this.activeSend !== null || this.receiver.hasInProgress();
+  }
+
+  // Whether a full reconnect is even possible: the caller can re-place the call
+  // (lastTarget), or this is the persistent presence connection that can receive
+  // the caller's re-call. Room-code transfers are neither → they fail fast.
+  private canReconnect(): boolean {
+    return this.lastTarget !== null || this.isPersistent;
   }
 
   // Terminal failure: reject an in-flight send, drop partial receives, notify.
@@ -395,7 +412,7 @@ export class PeerConnection {
   // then continues each side from its last contiguous seq.
   private loseConnection(reason: string): void {
     if (this.closing || this.fullReconnecting) return;
-    if (this.hasActiveTransfer() && this.lastTarget) this.beginFullReconnect();
+    if (this.hasActiveTransfer() && this.canReconnect()) this.beginFullReconnect();
     else this.failTransfer(reason);
   }
 
@@ -403,6 +420,7 @@ export class PeerConnection {
     if (this.fullReconnecting) return;
     this.fullReconnecting = true;
     this.fullAttempts = 0;
+    this.fullTicks = 0;
     this.reconnecting = false;
     if (this.graceTimer) {
       clearTimeout(this.graceTimer);
@@ -415,25 +433,31 @@ export class PeerConnection {
 
   private scheduleFullReconnect(): void {
     if (!this.fullReconnecting) return;
-    if (this.fullAttempts >= RECONNECT_MAX_ATTEMPTS) {
+    // Give up after enough real call attempts (initiator), or a hard tick cap so
+    // an answerer that never gets re-called doesn't wait forever.
+    if (this.fullAttempts >= RECONNECT_MAX_ATTEMPTS || this.fullTicks >= RECONNECT_MAX_TICKS) {
       this.fullReconnecting = false;
       this.failTransfer("connection_lost");
       return;
     }
-    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.fullAttempts, RECONNECT_MAX_DELAY_MS);
-    this.fullAttempts += 1;
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** Math.min(this.fullTicks, 4), RECONNECT_MAX_DELAY_MS);
+    this.fullTicks += 1;
     this.fullTimer = setTimeout(() => this.attemptFullReconnect(), delay);
   }
 
   private attemptFullReconnect(): void {
     this.fullTimer = null;
-    if (!this.fullReconnecting || !this.lastTarget) return;
-    // Only the original caller re-places the call; the answering side just waits
-    // for the resulting `ready`. Both keep retrying/waiting on the same schedule.
-    if (this.initiator) {
+    if (!this.fullReconnecting || this.closing) return;
+    // Only the original caller re-places the call, and only over an OPEN socket
+    // (sending on a reconnecting one throws). The answering side just waits for
+    // the resulting `ready`. A real call counts against the attempt budget; a
+    // skipped one (not initiator / ws not ready / awaiting re-auth) does not, so
+    // the presence socket's own reconnect can't burn the budget.
+    if (this.initiator && this.lastTarget && this.ws?.readyState === WebSocket.OPEN) {
       const t = this.lastTarget;
       if (t.kind === "device") this.send({ type: "call-device", targetDeviceId: t.id });
       else this.send({ type: "call", targetUserId: t.id });
+      this.fullAttempts += 1;
     }
     this.scheduleFullReconnect();
   }
@@ -441,6 +465,7 @@ export class PeerConnection {
   private endFullReconnect(): void {
     this.fullReconnecting = false;
     this.fullAttempts = 0;
+    this.fullTicks = 0;
     if (this.fullTimer) {
       clearTimeout(this.fullTimer);
       this.fullTimer = null;
@@ -499,7 +524,10 @@ export class PeerConnection {
   }
 
   private send(message: ClientToServerMessage): void {
-    this.ws?.send(JSON.stringify(message));
+    // Guard readyState: sending on a CONNECTING socket (e.g. the presence socket
+    // mid its own reconnect) throws InvalidStateError, which — from a reconnect
+    // timer — would kill the retry loop and hang the transfer.
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(message));
   }
 
   private handleSignalingMessage(event: MessageEvent): void {

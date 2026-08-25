@@ -125,14 +125,12 @@ export function GlobalTransfers() {
           </button>
         </div>
 
-        {callStatus === "connecting" && (
+        {(callStatus === "connecting" || callStatus === "reconnecting") && (
           <div className="status-line" style={{ justifyContent: "flex-start", padding: "4px 0" }}>
-            <PulseLine /> Connecting to your contact…
-          </div>
-        )}
-        {callStatus === "reconnecting" && (
-          <div className="status-line" style={{ justifyContent: "flex-start", padding: "4px 0" }}>
-            <PulseLine /> Reconnecting — resuming the transfer…
+            <PulseLine />{" "}
+            {callStatus === "connecting"
+              ? "Connecting to your contact…"
+              : "Reconnecting — resuming the transfer…"}
           </div>
         )}
         {callError && (
