@@ -85,7 +85,7 @@ export function AppShell({
           <span className="logo-mark">
             <img src="/logo.svg" alt="" width={30} height={30} />
           </span>
-          <span className="brand-name">RivuletSend</span>
+          <span className="brand-name">OwlSend</span>
           <button className="collapse-btn" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar">
             <CollapseIcon size={18} />
           </button>

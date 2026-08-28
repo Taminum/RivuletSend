@@ -18,7 +18,7 @@ export function DesktopAppCard() {
     <div className="card">
       <div className="panel-title">Desktop app</div>
       <p className="muted" style={{ marginTop: -4, marginBottom: 14 }}>
-        Run RivuletSend as a native Windows app — background transfers, tray icon, and auto-save to a folder.
+        Run OwlSend as a native Windows app — background transfers, tray icon, and auto-save to a folder.
       </p>
       <div className="download-row">
         <a className="btn btn-primary btn-sm" href={INSTALLER}>

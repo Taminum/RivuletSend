@@ -6,6 +6,8 @@ import { FilePreview } from "./FilePreview";
 import { FolderRow } from "./FolderRow";
 import { PulseLine } from "./PulseLine";
 import { FileIcon, XIcon, ReceiveIcon } from "../icons";
+import { useWakeLock } from "../wakeLock";
+import { useTransferTitle } from "../transferTitle";
 
 // Floating panel that surfaces contact (presence) transfers from anywhere in the
 // app, so an incoming file is visible no matter which view you're on.
@@ -16,6 +18,17 @@ export function GlobalTransfers() {
   const [received, setReceived] = useState<Transfer[]>([]);
   const announcedRef = useRef<Set<string>>(new Set());
   const prevCount = useRef(0);
+
+  // Keep the screen awake and show progress in the tab title while a contact
+  // transfer is in flight.
+  const inFlight = transfers.filter((t) => t.size > 0 && t.transferred < t.size);
+  const active = inFlight.length > 0;
+  const totalSize = inFlight.reduce((s, t) => s + t.size, 0);
+  const done = inFlight.reduce((s, t) => s + t.transferred, 0);
+  const pct = totalSize > 0 ? (done / totalSize) * 100 : 0;
+  const dir = inFlight.some((t) => t.direction === "receive") ? "down" : "up";
+  useWakeLock(active);
+  useTransferTitle("contact", active, pct, dir);
 
   // A new transfer (file or folder) re-opens the panel even if dismissed.
   useEffect(() => {

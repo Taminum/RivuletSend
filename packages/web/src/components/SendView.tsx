@@ -14,6 +14,8 @@ import { TransferSpeedometer } from "./TransferSpeedometer";
 import { TrustPanel } from "./send/TrustPanel";
 import { RecentActivityPanel } from "./send/RecentActivityPanel";
 import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon, ShareIcon } from "../icons";
+import { useWakeLock } from "../wakeLock";
+import { useTransferTitle } from "../transferTitle";
 
 type Mode = "files" | "text";
 type NavTarget = "contacts" | "settings";
@@ -151,7 +153,7 @@ export function SendView({
   async function shareCode() {
     try {
       await navigator.share({
-        title: "RivuletSend",
+        title: "OwlSend",
         text: `Here's a file for you — code: ${code}`,
         url: joinUrl,
       });
@@ -166,6 +168,11 @@ export function SendView({
     ? folders.length > 0 && folders.every((f) => f.done || f.failed)
     : transfers.length > 0 && transfers.every((t) => t.size > 0 && t.transferred >= t.size);
   const inFlight = transfers.filter((t) => t.direction === "send" && t.size > 0 && t.transferred < t.size);
+  const sendActive = inFlight.length > 0;
+  const sendTotal = inFlight.reduce((s, t) => s + t.size, 0);
+  const sendDone = inFlight.reduce((s, t) => s + t.transferred, 0);
+  useWakeLock(sendActive);
+  useTransferTitle("room-send", sendActive, sendTotal > 0 ? (sendDone / sendTotal) * 100 : 0, "up");
   const anyRate = inFlight.some((t) => t.speed != null);
   const aggRate = anyRate ? inFlight.reduce((s, t) => s + (t.speed ?? 0), 0) : null;
   const remaining = inFlight.reduce((s, t) => s + (t.size - t.transferred), 0);

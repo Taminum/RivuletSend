@@ -23,7 +23,7 @@ let isQuitting = false;
 // --- Which server to load ---
 //
 // The desktop app is a thin Chromium shell: it loads the web app straight from
-// a RivuletSend server, and that server's own bundle already knows its API and
+// a OwlSend server, and that server's own bundle already knows its API and
 // signaling URLs. So all the user has to choose is one thing — the address of
 // their server. It's stored here and can be changed from the menu later.
 //
@@ -61,7 +61,7 @@ function normalizeServerUrl(input) {
   }
 }
 
-// Confirm an address is actually a RivuletSend server before committing to it,
+// Confirm an address is actually a OwlSend server before committing to it,
 // so a typo lands on a clear message instead of a blank window.
 async function testServer(url) {
   const controller = new AbortController();
@@ -71,7 +71,7 @@ async function testServer(url) {
     if (!res.ok) return { ok: false, error: `Server responded with ${res.status}.` };
     const body = await res.json().catch(() => null);
     if (!body || body.status !== "ok") {
-      return { ok: false, error: "That address answered, but it isn't a RivuletSend server." };
+      return { ok: false, error: "That address answered, but it isn't a OwlSend server." };
     }
     return { ok: true };
   } catch (e) {
@@ -168,10 +168,10 @@ function showWindow() {
 function createTray() {
   const icon = nativeImage.createFromPath(TRAY_ICON_PATH);
   tray = new Tray(icon);
-  tray.setToolTip("RivuletSend — running in the background");
+  tray.setToolTip("OwlSend — running in the background");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Open RivuletSend", click: showWindow },
+      { label: "Open OwlSend", click: showWindow },
       { label: "Switch server…", click: () => mainWindow && loadSetup(mainWindow) },
       { type: "separator" },
       {
@@ -192,7 +192,7 @@ function createTray() {
 function buildMenu() {
   const template = [
     {
-      label: "RivuletSend",
+      label: "OwlSend",
       submenu: [
         {
           label: "Switch server…",
@@ -281,7 +281,7 @@ function configPath() {
 }
 
 function defaultConfig() {
-  return { enabled: false, dir: path.join(app.getPath("downloads"), "RivuletSend") };
+  return { enabled: false, dir: path.join(app.getPath("downloads"), "OwlSend") };
 }
 
 function readConfig() {

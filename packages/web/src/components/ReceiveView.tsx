@@ -8,6 +8,8 @@ import { FileIcon, ReceiveIcon } from "../icons";
 import { FilePreview } from "./FilePreview";
 import { FolderRow } from "./FolderRow";
 import { PeerBeam } from "./PeerBeam";
+import { useWakeLock } from "../wakeLock";
+import { useTransferTitle } from "../transferTitle";
 import { QrScannerModal } from "./QrScannerModal";
 import { CameraIcon } from "../icons";
 
@@ -20,6 +22,14 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
   const [joined, setJoined] = useState(false);
   const [preview, setPreview] = useState<Transfer | null>(null);
   const attempted = useRef(false);
+
+  // Keep the screen awake + show progress in the tab title while receiving.
+  // (Computed here, before any early return, so the hooks run every render.)
+  const rxInFlight = transfers.filter((t) => t.direction === "receive" && t.size > 0 && t.transferred < t.size);
+  const rxTotal = rxInFlight.reduce((s, t) => s + t.size, 0);
+  const rxDone = rxInFlight.reduce((s, t) => s + t.transferred, 0);
+  useWakeLock(rxInFlight.length > 0);
+  useTransferTitle("room-recv", rxInFlight.length > 0, rxTotal > 0 ? (rxDone / rxTotal) * 100 : 0, "down");
 
   // Keep the session's passphrase in sync so an encrypted transfer can be
   // decrypted the moment it starts arriving (never sent over the wire).

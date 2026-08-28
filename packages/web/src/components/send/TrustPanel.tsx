@@ -6,7 +6,7 @@ import { LockIcon, InfinityIcon, DeviceIcon } from "../../icons";
 export function TrustPanel() {
   return (
     <div className="card trust-panel">
-      <div className="panel-title">Why RivuletSend</div>
+      <div className="panel-title">Why OwlSend</div>
       <ul className="trust-list">
         <li>
           <span className="trust-ico">

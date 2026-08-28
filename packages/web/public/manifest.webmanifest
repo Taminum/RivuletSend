@@ -1,6 +1,6 @@
 {
-  "name": "RivuletSend",
-  "short_name": "RivuletSend",
+  "name": "OwlSend",
+  "short_name": "OwlSend",
   "description": "Peer-to-peer, end-to-end encrypted file transfer.",
   "start_url": "/",
   "scope": "/",
