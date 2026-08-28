@@ -4,8 +4,8 @@ import { DownloadIcon } from "../icons";
 // so these links never need bumping when a new version ships (the artifact names
 // are pinned in packages/desktop/package.json).
 const RELEASES = "https://github.com/Taminum/RivuletSend/releases";
-const INSTALLER = `${RELEASES}/latest/download/RivuletSend-Setup.exe`;
-const PORTABLE = `${RELEASES}/latest/download/RivuletSend-Portable.exe`;
+const INSTALLER = `${RELEASES}/latest/download/OwlSend-Setup.exe`;
+const PORTABLE = `${RELEASES}/latest/download/OwlSend-Portable.exe`;
 
 // Settings card offering the Windows desktop build. Hidden when the app is
 // already running inside the desktop shell — no point offering a download to

@@ -40,6 +40,6 @@ jobs:
         with:
           # The release is named after the tag; it's created if it doesn't exist.
           files: |
-            packages/desktop/release/RivuletSend-Setup.exe
-            packages/desktop/release/RivuletSend-Portable.exe
+            packages/desktop/release/OwlSend-Setup.exe
+            packages/desktop/release/OwlSend-Portable.exe
           fail_on_unmatched_files: true
