@@ -1298,6 +1298,16 @@ textarea.input {
   .main-body {
     padding: 0 16px calc(64px + env(safe-area-inset-bottom, 0px));
   }
+  /* The floating Transfers panel must sit ABOVE the bottom nav, full-width. */
+  .global-transfers {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    max-height: 55vh;
+    overflow-y: auto;
+  }
 }
 
 /* Advanced-options disclosure */
