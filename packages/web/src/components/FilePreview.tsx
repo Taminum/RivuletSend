@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Transfer } from "../transfers";
 import { formatBytes } from "../format";
 import { XIcon, CopyIcon, CheckIcon, ReceiveIcon } from "../icons";
+import { onFileDragStart } from "../dragOut";
 
 const TEXT_EXT = /\.(txt|md|markdown|json|csv|log|xml|ya?ml|ini|conf|sh|js|ts|css|html?)$/i;
 
@@ -21,6 +22,28 @@ function kindOf(t: Transfer): Kind {
   // even .html here is shown as source, not executed.
   if (mime.startsWith("text/") || TEXT_EXT.test(name)) return "text";
   return "none";
+}
+
+// Re-encode any image blob to PNG (via a canvas), the format the clipboard
+// accepts most reliably across browsers.
+function toPng(blob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      c.getContext("2d")?.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/png");
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("load failed"));
+    };
+    img.src = url;
+  });
 }
 
 export function FilePreview({ transfer, onClose }: { transfer: Transfer; onClose: () => void }) {
@@ -50,6 +73,23 @@ export function FilePreview({ transfer, onClose }: { transfer: Transfer; onClose
     setTimeout(() => setCopied(false), 1500);
   }
 
+  const canCopyImage =
+    kind === "image" && typeof ClipboardItem !== "undefined" && !!navigator.clipboard?.write;
+
+  async function copyImage() {
+    if (!transfer.url) return;
+    try {
+      const blob = await (await fetch(transfer.url)).blob();
+      // The clipboard is picky about image types; re-encode to PNG for reliability.
+      const png = blob.type === "image/png" ? blob : await toPng(blob);
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard image write unsupported / denied */
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -64,8 +104,20 @@ export function FilePreview({ transfer, onClose }: { transfer: Transfer; onClose
                 {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />} Copy
               </button>
             )}
+            {canCopyImage && (
+              <button className="btn btn-ghost btn-sm" onClick={copyImage}>
+                {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />} Copy
+              </button>
+            )}
             {transfer.url && (
-              <a className="btn btn-ghost btn-sm" href={transfer.url} download={transfer.name}>
+              <a
+                className="btn btn-ghost btn-sm"
+                href={transfer.url}
+                download={transfer.name}
+                title="Download (or drag me to a folder)"
+                draggable
+                onDragStart={(e) => onFileDragStart(e, transfer)}
+              >
                 <ReceiveIcon size={14} /> Download
               </a>
             )}
@@ -77,7 +129,13 @@ export function FilePreview({ transfer, onClose }: { transfer: Transfer; onClose
 
         <div className="modal-body">
           {kind === "image" && transfer.url && (
-            <img className="preview-image" src={transfer.url} alt={transfer.name} />
+            <img
+              className="preview-image"
+              src={transfer.url}
+              alt={transfer.name}
+              draggable
+              onDragStart={(e) => onFileDragStart(e, transfer)}
+            />
           )}
           {kind === "video" && transfer.url && (
             <video className="preview-media" src={transfer.url} controls />

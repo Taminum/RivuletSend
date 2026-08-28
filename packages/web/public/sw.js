@@ -14,9 +14,39 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+const SHARE_CACHE = "owlsend-shared";
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
+
+  // Web Share Target: another app shared file(s) to OwlSend. Stash them in a
+  // cache and redirect into the app, which reads them and stages a send.
+  if (req.method === "POST" && url.pathname === "/share") {
+    event.respondWith(
+      (async () => {
+        try {
+          const form = await req.formData();
+          const files = form.getAll("files").filter((f) => f instanceof File);
+          const cache = await caches.open(SHARE_CACHE);
+          const old = await cache.keys();
+          await Promise.all(old.map((k) => cache.delete(k)));
+          let i = 0;
+          for (const f of files) {
+            await cache.put(
+              new Request(`/__shared?name=${encodeURIComponent(f.name)}&i=${i++}`),
+              new Response(f, { headers: { "content-type": f.type || "application/octet-stream" } }),
+            );
+          }
+        } catch {
+          /* ignore — land in the app either way */
+        }
+        return Response.redirect("/?share-target", 303);
+      })(),
+    );
+    return;
+  }
+
   // Only own-origin GETs. Never touch the API or the signaling upgrade — they're
   // dynamic and carry the session; caching them would break auth/transfers.
   if (req.method !== "GET" || url.origin !== self.location.origin) return;

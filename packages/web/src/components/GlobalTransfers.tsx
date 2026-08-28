@@ -8,6 +8,7 @@ import { PulseLine } from "./PulseLine";
 import { FileIcon, XIcon, ReceiveIcon } from "../icons";
 import { useWakeLock } from "../wakeLock";
 import { useTransferTitle } from "../transferTitle";
+import { onFileDragStart } from "../dragOut";
 
 // Floating panel that surfaces contact (presence) transfers from anywhere in the
 // app, so an incoming file is visible no matter which view you're on.
@@ -186,7 +187,14 @@ export function GlobalTransfers() {
                     <span className="file-sub">{done ? formatBytes(t.size) : `${pct}%`}</span>
                   </span>
                   {canPreview && (
-                    <a className="file-action" href={t.url} download={t.name} title="Download">
+                    <a
+                      className="file-action"
+                      href={t.url}
+                      download={t.name}
+                      title="Download (or drag me to a folder)"
+                      draggable
+                      onDragStart={(e) => onFileDragStart(e, t)}
+                    >
                       <ReceiveIcon size={16} />
                     </a>
                   )}

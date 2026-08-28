@@ -10,6 +10,7 @@ import { FolderRow } from "./FolderRow";
 import { PeerBeam } from "./PeerBeam";
 import { useWakeLock } from "../wakeLock";
 import { useTransferTitle } from "../transferTitle";
+import { onFileDragStart } from "../dragOut";
 import { QrScannerModal } from "./QrScannerModal";
 import { CameraIcon } from "../icons";
 
@@ -196,7 +197,14 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
                     <span className="file-sub">{done ? formatBytes(t.size) : `${pct}%`}</span>
                   </span>
                   {done && t.url && (
-                    <a className="file-action" href={t.url} download={t.name} title="Download">
+                    <a
+                      className="file-action"
+                      href={t.url}
+                      download={t.name}
+                      title="Download (or drag me to a folder)"
+                      draggable
+                      onDragStart={(e) => onFileDragStart(e, t)}
+                    >
                       <ReceiveIcon size={18} />
                     </a>
                   )}

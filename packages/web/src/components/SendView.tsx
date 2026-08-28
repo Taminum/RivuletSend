@@ -16,6 +16,7 @@ import { RecentActivityPanel } from "./send/RecentActivityPanel";
 import { CloudUploadIcon, FileIcon, CopyIcon, CheckIcon, ShareIcon } from "../icons";
 import { useWakeLock } from "../wakeLock";
 import { useTransferTitle } from "../transferTitle";
+import { consumeSharedFiles } from "../sharedFiles";
 
 type Mode = "files" | "text";
 type NavTarget = "contacts" | "settings";
@@ -91,6 +92,18 @@ export function SendView({
     return () => document.removeEventListener("paste", onPaste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, code]);
+
+  // Web Share Target: another app shared file(s) to OwlSend and the SW redirected
+  // here with ?share-target — pick them up and start a send.
+  useEffect(() => {
+    if (!/[?&]share-target(\b|=)/.test(window.location.search)) return;
+    void (async () => {
+      const shared = await consumeSharedFiles();
+      window.history.replaceState(null, "", window.location.pathname); // don't re-trigger on refresh
+      if (shared.length) void startWith(shared);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggleAdv() {
     const next = !advOpen;
