@@ -64,6 +64,40 @@ type SignalPayload =
   | { kind: "sdp"; description: RTCSessionDescriptionInit }
   | { kind: "candidate"; candidate: RTCIceCandidateInit };
 
+// "direct-local" = both host candidates (same LAN, fastest); "direct" = a direct
+// P2P path via public/reflexive addresses; "relay" = routed through TURN (slow).
+export type ConnectionType = "direct-local" | "direct" | "relay" | "unknown";
+
+// Read the selected ICE candidate pair from getStats() to classify the path.
+async function classifyConnection(pc: RTCPeerConnection): Promise<ConnectionType> {
+  try {
+    const stats = await pc.getStats();
+    const byId = new Map<string, Record<string, unknown>>();
+    let pair: Record<string, unknown> | null = null;
+    let selectedPairId: string | undefined;
+    stats.forEach((raw) => {
+      const r = raw as unknown as Record<string, unknown>;
+      byId.set(r.id as string, r);
+      if (r.type === "transport" && typeof r.selectedCandidatePairId === "string") {
+        selectedPairId = r.selectedCandidatePairId;
+      }
+      if (r.type === "candidate-pair" && (r.selected || r.nominated) && r.state === "succeeded" && !pair) {
+        pair = r;
+      }
+    });
+    if (selectedPairId && byId.has(selectedPairId)) pair = byId.get(selectedPairId) ?? pair;
+    if (!pair) return "unknown";
+    const p = pair as Record<string, unknown>;
+    const localType = byId.get(p.localCandidateId as string)?.candidateType;
+    const remoteType = byId.get(p.remoteCandidateId as string)?.candidateType;
+    if (localType === "relay" || remoteType === "relay") return "relay";
+    if (localType === "host" && remoteType === "host") return "direct-local";
+    return "direct";
+  } catch {
+    return "unknown";
+  }
+}
+
 export class PeerConnection {
   private ws: WebSocket | null = null;
   private pc: RTCPeerConnection | null = null;
@@ -116,6 +150,9 @@ export class PeerConnection {
   // backgrounding). Lets the presence layer reconnect rather than sit on a dead
   // socket that still looks "online".
   onSignalingClosed: () => void = () => {};
+  // How the peers ended up connected — surfaced so the UI can warn when a
+  // transfer is being relayed (slow) instead of going direct.
+  onConnectionType: (type: ConnectionType) => void = () => {};
   onCallFailed: (reason: CallFailureReason) => void = () => {};
   onPresenceSnapshot: (online: string[]) => void = () => {};
   onPresenceUpdate: (userId: string, online: boolean) => void = () => {};
@@ -638,10 +675,21 @@ export class PeerConnection {
     for (const payload of queued) void this.applySignal(payload);
   }
 
+  // Classify the path (direct vs relayed) shortly after connect and report it.
+  private reportConnectionType(): void {
+    const pc = this.pc;
+    if (!pc) return;
+    setTimeout(() => {
+      if (this.pc !== pc) return; // superseded
+      void classifyConnection(pc).then((t) => this.onConnectionType(t));
+    }, 1200);
+  }
+
   private setupDataChannel(channel: RTCDataChannel): void {
     this.channel = channel;
     channel.binaryType = "arraybuffer";
     channel.onopen = () => {
+      this.reportConnectionType();
       if (this.fullReconnecting) {
         // A fresh connection re-established mid-transfer: don't run the normal
         // "connected" flush (which would re-send / advance the queue). Resume in

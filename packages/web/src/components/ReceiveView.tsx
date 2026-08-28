@@ -14,7 +14,7 @@ import { QrScannerModal } from "./QrScannerModal";
 import { CameraIcon } from "../icons";
 
 export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer) => void }) {
-  const { connected, transfers, folders, error, joinRoom, setPassphrase } = useTransferSession(onComplete);
+  const { connected, connectionType, transfers, folders, error, joinRoom, setPassphrase } = useTransferSession(onComplete);
   const [code, setCode] = useState("");
   const [passphrase, setPassphraseInput] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -145,6 +145,15 @@ export function ReceiveView({ onComplete }: { onComplete?: (t: CompletedTransfer
         <div style={{ padding: "6px 0" }}>
           <PeerBeam state={beamState} />
         </div>
+        {connected && connectionType !== "unknown" && (
+          <div className={`conn-badge ${connectionType === "relay" ? "relay" : "direct"}`}>
+            {connectionType === "relay"
+              ? "⚠ Relayed via server — slower (direct P2P didn't connect)"
+              : connectionType === "direct-local"
+                ? "Direct · local network"
+                : "Direct connection"}
+          </div>
+        )}
         {error && <p className="error" style={{ marginBottom: 0, textAlign: "center" }}>{error}</p>}
       </div>
 

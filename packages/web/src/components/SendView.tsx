@@ -35,7 +35,7 @@ export function SendView({
   onNavigate?: (view: NavTarget) => void;
 }) {
   const { user } = useAuth();
-  const { connected, transfers, folders, error, createRoom, sendFiles, sendFolder, reset, setPassphrase } =
+  const { connected, connectionType, transfers, folders, error, createRoom, sendFiles, sendFolder, reset, setPassphrase } =
     useTransferSession(onComplete);
   const [code, setCode] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -222,6 +222,15 @@ export function SendView({
       <div style={{ marginTop: 20 }}>
         <PeerBeam state={!connected ? "waiting" : allDone ? "done" : "transferring"} />
       </div>
+      {connected && connectionType !== "unknown" && (
+        <div className={`conn-badge ${connectionType === "relay" ? "relay" : "direct"}`} style={{ marginTop: 12 }}>
+          {connectionType === "relay"
+            ? "⚠ Relayed via server — slower (direct P2P didn't connect)"
+            : connectionType === "direct-local"
+              ? "Direct · local network"
+              : "Direct connection"}
+        </div>
+      )}
       {connected && !allDone && (
         <p className="muted" style={{ marginTop: 14, fontSize: 12.5, textAlign: "center" }}>
           Reconnects automatically if the connection drops — closing the tab cancels the transfer.

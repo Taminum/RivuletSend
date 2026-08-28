@@ -12,7 +12,7 @@ import { useTransferTitle } from "../transferTitle";
 // Floating panel that surfaces contact (presence) transfers from anywhere in the
 // app, so an incoming file is visible no matter which view you're on.
 export function GlobalTransfers() {
-  const { transfers, folders, callStatus, callError, clearCallError } = usePresence();
+  const { transfers, folders, callStatus, connectionType, callError, clearCallError } = usePresence();
   const [dismissed, setDismissed] = useState(false);
   const [preview, setPreview] = useState<Transfer | null>(null);
   const [received, setReceived] = useState<Transfer[]>([]);
@@ -144,6 +144,15 @@ export function GlobalTransfers() {
             {callStatus === "connecting"
               ? "Connecting to your contact…"
               : "Reconnecting — resuming the transfer…"}
+          </div>
+        )}
+        {active && connectionType !== "unknown" && (
+          <div className={`conn-badge ${connectionType === "relay" ? "relay" : "direct"}`}>
+            {connectionType === "relay"
+              ? "⚠ Relayed via server — slower (direct P2P didn't connect)"
+              : connectionType === "direct-local"
+                ? "Direct · local network"
+                : "Direct connection"}
           </div>
         )}
         {callError && (

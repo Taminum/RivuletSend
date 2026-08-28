@@ -1037,6 +1037,24 @@ textarea.input {
 }
 
 /* ---------- Global transfers panel ---------- */
+/* Direct-vs-relay connection badge in the Transfers panel. */
+.conn-badge {
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 9px;
+  border-radius: 8px;
+  margin: 2px 0 6px;
+  text-align: center;
+}
+.conn-badge.direct {
+  background: rgba(52, 199, 129, 0.14);
+  color: var(--green);
+}
+.conn-badge.relay {
+  background: rgba(224, 163, 78, 0.15);
+  color: #e0a34e;
+}
+
 .global-transfers {
   position: fixed;
   right: 20px;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PeerConnection } from "../peer";
+import { PeerConnection, type ConnectionType } from "../peer";
 import { SpeedTracker } from "../speedTracker";
 import { notifyTransferComplete } from "../notifications";
 import { formatBytes } from "../format";
@@ -24,6 +24,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
   completeRef.current = onComplete;
 
   const [connected, setConnected] = useState(false);
+  const [connectionType, setConnectionType] = useState<ConnectionType>("unknown");
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [folders, setFolders] = useState<FolderTransfer[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +101,7 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
       // over the live channel (headless WebRTC can't be network-partitioned).
       if (import.meta.env.DEV) (window as unknown as { __peer?: PeerConnection }).__peer = peer;
       peer.onConnected = () => setConnected(true);
+      peer.onConnectionType = (t) => setConnectionType(t);
       // On a same-session reconnect, drop the pre-disconnect rate samples so the
       // speedometer recalibrates instead of showing a stale number.
       peer.onReconnected = () => trackerRef.current.forEach((tr) => tr.reset());
@@ -293,5 +295,5 @@ export function useTransferSession(onComplete?: (t: CompletedTransfer) => void) 
     peerRef.current?.setPassphrase(passphraseRef.current);
   }, []);
 
-  return { connected, transfers, folders, error, setError, createRoom, joinRoom, sendFiles, sendFolder, reset, setPassphrase };
+  return { connected, connectionType, transfers, folders, error, setError, createRoom, joinRoom, sendFiles, sendFolder, reset, setPassphrase };
 }

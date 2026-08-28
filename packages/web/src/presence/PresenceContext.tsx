@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type { CallFailureReason } from "@p2p/shared";
-import { PeerConnection } from "../peer";
+import { PeerConnection, type ConnectionType } from "../peer";
 import type { FolderEntry } from "../fileTransfer";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
@@ -28,6 +28,7 @@ export type ContactSendPhase = "queued" | "sending" | "sent" | "failed";
 interface PresenceValue {
   online: boolean;
   callStatus: CallStatus;
+  connectionType: ConnectionType;
   callError: string | null;
   activePeerId: string | null;
   transfers: Transfer[];
@@ -112,6 +113,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
 
   const [online, setOnline] = useState(false);
   const [callStatus, setCallStatus] = useState<CallStatus>("idle");
+  const [connectionType, setConnectionType] = useState<ConnectionType>("unknown");
   const [callError, setCallError] = useState<string | null>(null);
   const [activePeerId, setActivePeerId] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
@@ -201,6 +203,9 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     // the UI shows "Reconnecting…" instead of looking stalled.
     peer.onReconnecting = () => setCallStatus("reconnecting");
     peer.onReconnected = () => setCallStatus("connected");
+    peer.onConnectionType = (t) => {
+      if (!cancelled) setConnectionType(t);
+    };
     peer.onConnected = () => {
       setCallStatus("connected");
       // Flush the queued folder or files now that the channel is open, then
@@ -500,6 +505,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
     const id = q.ids[q.index];
     setContactSendState((p) => ({ ...p, [id]: "sending" }));
     setCallError(null);
+    setConnectionType("unknown");
     pendingFilesRef.current = q.files;
     activePeerRef.current = id;
     setActivePeerId(id);
@@ -636,6 +642,7 @@ export function PresenceProvider({ children, onTransferComplete }: Props) {
       value={{
         online,
         callStatus,
+        connectionType,
         callError,
         activePeerId,
         transfers,
