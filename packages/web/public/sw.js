@@ -1,6 +1,6 @@
 // Minimal service worker: makes the app installable and gives an offline shell,
 // without ever caching dynamic/authenticated traffic.
-const CACHE = "rivuletsend-v1";
+const CACHE = "owlsend-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -51,6 +51,9 @@ self.addEventListener("fetch", (event) => {
   // dynamic and carry the session; caching them would break auth/transfers.
   if (req.method !== "GET" || url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api") || url.pathname.startsWith("/ws")) return;
+  // The manifest must never be cached — a stale one drops new fields like
+  // share_target (why "Share to OwlSend" didn't appear). Always fetch it fresh.
+  if (url.pathname === "/manifest.webmanifest") return;
 
   // Navigations: network-first so a new deploy is picked up, cached shell offline.
   if (req.mode === "navigate") {
@@ -74,7 +77,7 @@ self.addEventListener("fetch", (event) => {
       const cached = await caches.match(req);
       if (cached) return cached;
       const res = await fetch(req);
-      if (res.ok && (url.pathname.startsWith("/assets/") || /\.(png|svg|webmanifest|woff2?)$/.test(url.pathname))) {
+      if (res.ok && (url.pathname.startsWith("/assets/") || /\.(png|svg|woff2?)$/.test(url.pathname))) {
         (await caches.open(CACHE)).put(req, res.clone());
       }
       return res;
