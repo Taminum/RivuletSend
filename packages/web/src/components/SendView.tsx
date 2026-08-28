@@ -480,8 +480,16 @@ export function SendView({
           )
         ) : (
           <>
-            <MyDevicesSend onManage={() => onNavigate?.("settings")} />
-            <ContactSendList onManageContacts={() => onNavigate?.("contacts")} />
+            <MyDevicesSend
+              onManage={() => onNavigate?.("settings")}
+              stagedFiles={!isFolder ? files : undefined}
+              onSent={newTransfer}
+            />
+            <ContactSendList
+              onManageContacts={() => onNavigate?.("contacts")}
+              stagedFiles={!isFolder ? files : undefined}
+              onSent={newTransfer}
+            />
             <RecentActivityPanel live={transfers} />
           </>
         )}

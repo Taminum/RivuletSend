@@ -10,7 +10,15 @@ import { SendIcon, FolderIcon } from "../icons";
 // Compact list of accepted contacts, each with a direct Send button that skips
 // the code entirely: pick files → presence lookup → WebRTC. Reused on the Send
 // view and available anywhere a "send to contact" shortcut is useful.
-export function ContactSendList({ onManageContacts }: { onManageContacts?: () => void }) {
+export function ContactSendList({
+  onManageContacts,
+  stagedFiles,
+  onSent,
+}: {
+  onManageContacts?: () => void;
+  stagedFiles?: File[];
+  onSent?: () => void;
+}) {
   const { data } = useContacts();
   const { online, isContactOnline, sendToContact, sendFolderToContact, callStatus, sendWhenOnline, cancelQueued, queuedForOnline } =
     usePresence();
@@ -28,6 +36,17 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
       (c) => contactName(c).toLowerCase().includes(q) || (c.user.email ?? "").toLowerCase().includes(q),
     );
   }, [accepted, query]);
+
+  const staged = stagedFiles ?? [];
+  function sendTo(userId: string, whenOnline = false) {
+    if (staged.length) {
+      if (whenOnline) sendWhenOnline("contact", userId, staged);
+      else sendToContact(userId, staged);
+      onSent?.();
+    } else {
+      pickFilesFor(userId, whenOnline);
+    }
+  }
 
   function pickFilesFor(userId: string, whenOnline = false) {
     targetRef.current = userId;
@@ -140,8 +159,8 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
                         <button
                           className="btn btn-primary btn-sm"
                           disabled={callStatus === "connecting"}
-                          title="Send files — no code needed"
-                          onClick={() => pickFilesFor(c.user.id)}
+                          title={staged.length ? "Send the shared file(s) to this contact" : "Send files — no code needed"}
+                          onClick={() => sendTo(c.user.id)}
                         >
                           <SendIcon size={14} /> Send
                         </button>
@@ -149,8 +168,8 @@ export function ContactSendList({ onManageContacts }: { onManageContacts?: () =>
                     ) : (
                       <button
                         className="btn btn-ghost btn-sm"
-                        title="Queue files — they'll send automatically when this contact comes online"
-                        onClick={() => pickFilesFor(c.user.id, true)}
+                        title="Queue — sends automatically when this contact comes online"
+                        onClick={() => sendTo(c.user.id, true)}
                       >
                         <SendIcon size={14} /> Send when online
                       </button>

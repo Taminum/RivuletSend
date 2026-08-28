@@ -8,7 +8,17 @@ import { SendIcon, FolderIcon } from "../icons";
 // Send files straight to one of my own paired devices (e.g. my Windows client),
 // no code and no confirmation — only that the device is online. This is the
 // point of pairing: fling a file to my other machine.
-export function MyDevicesSend({ onManage }: { onManage?: () => void } = {}) {
+export function MyDevicesSend({
+  onManage,
+  stagedFiles,
+  onSent,
+}: {
+  onManage?: () => void;
+  // Files already picked (dropped / shared / pasted) — the Send button sends
+  // these directly instead of opening a picker.
+  stagedFiles?: File[];
+  onSent?: () => void;
+} = {}) {
   const { isDeviceOnline, sendToDevice, sendFolderToDevice, callStatus, sendWhenOnline, cancelQueued, queuedForOnline } =
     usePresence();
   const [devices, setDevices] = useState<ApiDevice[]>([]);
@@ -56,6 +66,18 @@ export function MyDevicesSend({ onManage }: { onManage?: () => void } = {}) {
     );
   }
   if (others.length === 0) return null; // still loading
+
+  const staged = stagedFiles ?? [];
+  // Send the already-staged files straight to a device, or fall back to a picker.
+  function sendTo(deviceId: string, whenOnline = false) {
+    if (staged.length) {
+      if (whenOnline) sendWhenOnline("device", deviceId, staged);
+      else sendToDevice(deviceId, staged);
+      onSent?.();
+    } else {
+      pickFilesFor(deviceId, whenOnline);
+    }
+  }
 
   function pickFilesFor(deviceId: string, whenOnline = false) {
     targetRef.current = deviceId;
@@ -137,8 +159,8 @@ export function MyDevicesSend({ onManage }: { onManage?: () => void } = {}) {
                     <button
                       className="btn btn-primary btn-sm"
                       disabled={callStatus === "connecting"}
-                      title="Send files to this device"
-                      onClick={() => pickFilesFor(d.id)}
+                      title={staged.length ? "Send the shared file(s) to this device" : "Send files to this device"}
+                      onClick={() => sendTo(d.id)}
                     >
                       <SendIcon size={14} /> Send
                     </button>
@@ -146,8 +168,8 @@ export function MyDevicesSend({ onManage }: { onManage?: () => void } = {}) {
                 ) : (
                   <button
                     className="btn btn-ghost btn-sm"
-                    title="Queue files — they'll send automatically when this device comes online"
-                    onClick={() => pickFilesFor(d.id, true)}
+                    title="Queue — sends automatically when this device comes online"
+                    onClick={() => sendTo(d.id, true)}
                   >
                     <SendIcon size={14} /> Send when online
                   </button>
