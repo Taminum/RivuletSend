@@ -17,11 +17,15 @@ declare module "@fastify/jwt" {
   }
 }
 
+// Returns the freshly signed JWT. The browser ignores it (it relies on the
+// httpOnly cookie set here), but non-browser clients — the native mobile app —
+// can't read an httpOnly cookie, so they store this token and send it as
+// `Authorization: Bearer`. @fastify/jwt reads that header as well as the cookie.
 export async function issueSession(
   reply: FastifyReply,
   userId: string,
   deviceId?: string,
-): Promise<void> {
+): Promise<string> {
   const token = await reply.jwtSign(deviceId ? { sub: userId, did: deviceId } : { sub: userId });
   reply.setCookie(AUTH_COOKIE, token, {
     httpOnly: true, // unreadable by injected scripts
@@ -30,6 +34,7 @@ export async function issueSession(
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
+  return token;
 }
 
 export function clearSession(reply: FastifyReply): void {

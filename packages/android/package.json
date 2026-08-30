@@ -10,8 +10,11 @@
   },
   "dependencies": {
     "@p2p/shared": "workspace:*",
+    "@react-native-async-storage/async-storage": "^1.24.0",
     "react": "18.3.1",
     "react-native": "0.75.4",
+    "react-native-blob-util": "^0.19.11",
+    "react-native-document-picker": "^9.3.1",
     "react-native-webrtc": "^124.0.5"
   },
   "devDependencies": {

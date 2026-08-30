@@ -115,8 +115,10 @@ export async function registerPairingRoutes(app: FastifyInstance): Promise<void>
       if (!user) return reply.send({ status: "expired" });
       // Single-use: mark claimed so a re-poll (or a captured code) can't re-issue.
       await prisma.pairingRequest.update({ where: { id: req.id }, data: { claimedAt: new Date() } });
-      await issueSession(reply, user.id, device.id);
-      return reply.send({ status: "approved", user: serializeUser(user) });
+      // Return the token in the body too: the native app can't read the httpOnly
+      // session cookie, so it stores this and sends it as a Bearer token.
+      const token = await issueSession(reply, user.id, device.id);
+      return reply.send({ status: "approved", user: serializeUser(user), token });
     }
 
     // approved + already claimed, or expired.

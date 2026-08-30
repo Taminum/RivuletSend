@@ -1,217 +1,533 @@
-import React, {useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
+  ActivityIndicator,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import {BackpressureProbe, type ProbeStats} from './src/peer/backpressureProbe';
+import {theme} from './src/theme';
+import {loadToken, setToken, ApiError} from './src/net/session';
+import {api, contactName, type ApiDevice, type ContactEntry, type ApiUser} from './src/net/api';
+import {Presence} from './src/net/presence';
+import {TransferPeer} from './src/peer/peer';
+import {pickFileToSend, type PickedFile} from './src/files/pick';
+import type {IncomingMeta} from './src/peer/transfer';
 
-// Bytes to push in the probe. 64 MB is enough to blow past the 4 MB high-water
-// mark many times and exercise the drain path repeatedly, without waiting all
-// day. Bump it for a closer analogue of the multi-GB e2e fixture once the basics
-// look right on a real device.
-const PROBE_BYTES = 64 * 1024 * 1024;
+type Screen = 'loading' | 'pair' | 'home';
 
-const ACCENT = '#7c6df2';
-
-// Step 1 harness: the whole point is to establish a react-native-webrtc data
-// channel through the real signaling server and confirm the browser-tuned
-// backpressure logic behaves the same here. No transfer UI yet — just the
-// riskiest unknown, on a real device, first.
 export default function App(): React.JSX.Element {
-  const [signalingUrl, setSignalingUrl] = useState('wss://send.tarmalion.ru/ws');
-  const [code, setCode] = useState('');
-  const [log, setLog] = useState<string[]>([]);
-  const [role, setRole] = useState<'sender' | 'receiver' | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [stats, setStats] = useState<ProbeStats | null>(null);
-  const probeRef = useRef<BackpressureProbe | null>(null);
+  const [screen, setScreen] = useState<Screen>('loading');
+  const [user, setUser] = useState<ApiUser | null>(null);
 
-  const append = (line: string) => setLog((l) => [...l, line]);
+  // Decide the initial screen: a stored token that still resolves /auth/me means
+  // we're paired; anything else sends us to pairing.
+  useEffect(() => {
+    (async () => {
+      const token = await loadToken();
+      if (!token) return setScreen('pair');
+      try {
+        const {user: u} = await api.me();
+        setUser(u);
+        setScreen('home');
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          await setToken(null);
+        }
+        setScreen('pair');
+      }
+    })();
+  }, []);
 
-  function makeProbe(): BackpressureProbe {
-    const probe = new BackpressureProbe(signalingUrl);
-    probe.onStatus = (m) => append(m);
-    probe.onConnected = (r) => {
-      setRole(r);
-      append(`data channel open — role: ${r}`);
-    };
-    probe.onReceiveProgress = (bytes, mbps) =>
-      setLog((l) => [
-        ...l.filter((x) => !x.startsWith('recv ')),
-        `recv ${(bytes / 1e6).toFixed(1)} MB  ${mbps.toFixed(1)} MB/s`,
-      ]);
-    probeRef.current = probe;
-    return probe;
+  const onPaired = useCallback((u: ApiUser) => {
+    setUser(u);
+    setScreen('home');
+  }, []);
+
+  const onLogout = useCallback(async () => {
+    await setToken(null);
+    setUser(null);
+    setScreen('pair');
+  }, []);
+
+  if (screen === 'loading') {
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator color={theme.accent} size="large" />
+      </SafeAreaView>
+    );
   }
+  if (screen === 'pair') {
+    return <PairScreen onPaired={onPaired} />;
+  }
+  return <HomeScreen user={user!} onLogout={onLogout} />;
+}
 
-  async function onCreate() {
-    setBusy(true);
-    setStats(null);
-    try {
-      const roomCode = await makeProbe().createRoom();
-      setCode(roomCode);
-      append(`room created: ${roomCode} — waiting for the other phone to join…`);
-    } catch (e) {
-      append(`create failed: ${String(e)}`);
-    } finally {
-      setBusy(false);
+// --- Pairing ---
+function PairScreen({onPaired}: {onPaired: (u: ApiUser) => void}): React.JSX.Element {
+  const [code, setCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
-  }
+  };
 
-  async function onJoin() {
-    if (!code.trim()) return;
-    setBusy(true);
-    setStats(null);
+  const requestCode = useCallback(async () => {
+    setError(null);
+    setCode(null);
+    stopPolling();
     try {
-      await makeProbe().joinRoom(code.trim().toUpperCase());
-      append('joined — negotiating…');
-    } catch (e) {
-      append(`join failed: ${String(e)}`);
-    } finally {
-      setBusy(false);
+      const {code: c} = await api.pairingRequest({platform: 'android', label: 'Android phone'});
+      setCode(c);
+      pollRef.current = setInterval(async () => {
+        try {
+          const res = await api.pairingStatus(c);
+          if (res.status === 'approved' && res.token && res.user) {
+            stopPolling();
+            await setToken(res.token);
+            onPaired(res.user);
+          } else if (res.status === 'expired') {
+            stopPolling();
+            setCode(null);
+            setError('Code expired — tap to get a new one.');
+          }
+        } catch {
+          /* transient — keep polling */
+        }
+      }, 2000);
+    } catch {
+      setError('Could not reach the server. Check your connection and retry.');
     }
-  }
+  }, [onPaired]);
 
-  async function onRunProbe() {
-    const probe = probeRef.current;
-    if (!probe) return;
-    setBusy(true);
-    append(`sending ${(PROBE_BYTES / 1e6).toFixed(0)} MB…`);
-    try {
-      const s = await probe.runProbe(PROBE_BYTES, (sent) => {
-        setLog((l) => [
-          ...l.filter((x) => !x.startsWith('sent ')),
-          `sent ${(sent / 1e6).toFixed(1)} MB`,
-        ]);
-      });
-      setStats(s);
-      append('probe done');
-    } catch (e) {
-      append(`probe failed: ${String(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => {
+    void requestCode();
+    return stopPolling;
+  }, [requestCode]);
 
   return (
     <SafeAreaView style={styles.root}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>RivuletSend — WebRTC probe</Text>
-        <Text style={styles.sub}>
-          Step 1: verify react-native-webrtc data channel + backpressure on a real device.
-          Run two phones — one Creates, one Joins with the code.
-        </Text>
+        <Text style={styles.brand}>OwlSend</Text>
+        <Text style={styles.sub}>Link this phone to your account</Text>
 
-        <Text style={styles.label}>Signaling URL</Text>
-        <TextInput
-          style={styles.input}
-          value={signalingUrl}
-          onChangeText={setSignalingUrl}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <View style={styles.row}>
-          <Button title="Create room" onPress={onCreate} disabled={busy} />
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Pairing code</Text>
+          {code ? (
+            <Text style={styles.code}>{code}</Text>
+          ) : (
+            <ActivityIndicator color={theme.accent} style={{marginVertical: 20}} />
+          )}
+          <Text style={styles.hint}>
+            On OwlSend web or desktop (already signed in), open Settings → “Link a
+            device” and enter this code. It expires in ~2 minutes.
+          </Text>
         </View>
 
-        <Text style={styles.label}>…or join with a code</Text>
-        <View style={styles.row}>
-          <TextInput
-            style={[styles.input, styles.codeInput]}
-            value={code}
-            onChangeText={setCode}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            placeholder="ABCD1234"
-            placeholderTextColor="#666"
-          />
-          <Button title="Join" onPress={onJoin} disabled={busy} />
-        </View>
+        {error && <Text style={styles.error}>{error}</Text>}
 
-        {role === 'sender' && (
-          <View style={styles.row}>
-            <Button title={`Send ${PROBE_BYTES / 1e6} MB probe`} onPress={onRunProbe} disabled={busy} />
-          </View>
-        )}
-
-        {stats && (
-          <View style={styles.stats}>
-            <Text style={styles.statsTitle}>Result</Text>
-            <Stat k="Throughput" v={`${stats.throughputMBs.toFixed(1)} MB/s`} />
-            <Stat k="Sent" v={`${(stats.bytes / 1e6).toFixed(0)} MB in ${stats.seconds.toFixed(1)}s`} />
-            <Stat k="Max buffered" v={`${(stats.maxBufferedAmount / 1e6).toFixed(2)} MB`} />
-            <Stat k="Drain waits" v={String(stats.drainWaits)} />
-            <Stat
-              k="bufferedamountlow"
-              v={stats.bufferedAmountLowSupported ? 'fires ✓' : 'UNRELIABLE ✗'}
-            />
-            <Stat k="Event timeouts" v={String(stats.drainEventTimeouts)} />
-          </View>
-        )}
-
-        <Text style={styles.label}>Log</Text>
-        <View style={styles.logBox}>
-          {log.map((line, i) => (
-            <Text key={i} style={styles.logLine}>
-              {line}
-            </Text>
-          ))}
-        </View>
+        <TouchableOpacity style={styles.btnGhost} onPress={requestCode}>
+          <Text style={styles.btnGhostText}>New code</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Button({title, onPress, disabled}: {title: string; onPress: () => void; disabled?: boolean}) {
+// --- Home ---
+type Status =
+  | {kind: 'idle'}
+  | {kind: 'calling'; label: string}
+  | {kind: 'sending'; label: string; pct: number}
+  | {kind: 'receiving'; name: string; pct: number}
+  | {kind: 'done'; text: string; shareUrl?: string}
+  | {kind: 'failed'; text: string};
+
+function HomeScreen({
+  user,
+  onLogout,
+}: {
+  user: ApiUser;
+  onLogout: () => void;
+}): React.JSX.Element {
+  const [devices, setDevices] = useState<ApiDevice[]>([]);
+  const [contacts, setContacts] = useState<ContactEntry[]>([]);
+  const [onlineDevices, setOnlineDevices] = useState<Set<string>>(new Set());
+  const [onlineContacts, setOnlineContacts] = useState<Set<string>>(new Set());
+  const [presenceUp, setPresenceUp] = useState(false);
+  const [staged, setStaged] = useState<PickedFile | null>(null);
+  const [status, setStatus] = useState<Status>({kind: 'idle'});
+
+  const presenceRef = useRef<Presence | null>(null);
+  const peerRef = useRef<TransferPeer | null>(null);
+  // What we intend to send once a connection opens (sender path).
+  const pendingSendRef = useRef<PickedFile | null>(null);
+  const pendingLabelRef = useRef<string>('');
+
+  const teardownPeer = useCallback(() => {
+    peerRef.current?.close();
+    peerRef.current = null;
+    pendingSendRef.current = null;
+  }, []);
+
+  const makePeer = useCallback((): TransferPeer => {
+    const presence = presenceRef.current!;
+    const peer = new TransferPeer(payload => presence.send({type: 'signal', payload}), {
+      onConnected: () => {
+        const file = pendingSendRef.current;
+        if (file) {
+          setStatus({kind: 'sending', label: pendingLabelRef.current, pct: 0});
+          peer
+            .sendFile(file, (sent, total) =>
+              setStatus({
+                kind: 'sending',
+                label: pendingLabelRef.current,
+                pct: total ? sent / total : 0,
+              }),
+            )
+            .then(() => {
+              setStatus({kind: 'done', text: `Sent “${file.name}”`});
+              setStaged(null);
+              pendingSendRef.current = null;
+              teardownPeer();
+            })
+            .catch(() => {
+              setStatus({kind: 'failed', text: 'Send failed'});
+              teardownPeer();
+            });
+        }
+      },
+      onIncomingStart: (m: IncomingMeta) =>
+        setStatus({kind: 'receiving', name: m.name, pct: 0}),
+      onIncomingProgress: (received, total) =>
+        setStatus(s =>
+          s.kind === 'receiving' ? {...s, pct: total ? received / total : 0} : s,
+        ),
+      onIncomingFile: (m, location) => {
+        setStatus({
+          kind: 'done',
+          text: `Received “${m.name}” → ${location.startsWith('content://') ? 'Downloads' : location}`,
+          shareUrl: location,
+        });
+        teardownPeer();
+      },
+      onDisconnected: () => {
+        // Only surface if we were mid-transfer; an idle close is expected.
+        setStatus(s =>
+          s.kind === 'sending' || s.kind === 'receiving' || s.kind === 'calling'
+            ? {kind: 'failed', text: 'Connection lost'}
+            : s,
+        );
+      },
+      onError: reason => setStatus({kind: 'failed', text: `Error: ${reason}`}),
+    });
+    return peer;
+  }, [teardownPeer]);
+
+  const refreshLists = useCallback(async () => {
+    try {
+      const [{devices: d}, c] = await Promise.all([api.listDevices(), api.listContacts()]);
+      setDevices(d.filter(x => !x.isCurrent));
+      setContacts(c.accepted);
+    } catch {
+      /* leave whatever we had */
+    }
+  }, []);
+
+  // Presence connection + list load, once.
+  useEffect(() => {
+    void refreshLists();
+    const presence = new Presence({
+      onStatus: up => setPresenceUp(up),
+      onDevicesChanged: s => setOnlineDevices(new Set(s)),
+      onContactsChanged: s => setOnlineContacts(new Set(s)),
+      onReady: initiator => {
+        // Someone connected. Reuse the pending peer if we started the call;
+        // otherwise this is an incoming transfer — build a receiver peer.
+        if (!peerRef.current) peerRef.current = makePeer();
+        void peerRef.current.start(initiator);
+        if (!initiator && !pendingSendRef.current) {
+          setStatus({kind: 'receiving', name: '…', pct: 0});
+        }
+      },
+      onSignal: payload => peerRef.current?.handleSignal(payload),
+      onPeerLeft: () => {
+        setStatus(s =>
+          s.kind === 'sending' || s.kind === 'receiving' || s.kind === 'calling'
+            ? {kind: 'failed', text: 'Peer left'}
+            : s,
+        );
+        teardownPeer();
+      },
+      onCallFailed: reason => {
+        setStatus({kind: 'failed', text: `Can’t connect: ${reason}`});
+        teardownPeer();
+      },
+    });
+    presenceRef.current = presence;
+    void presence.connect();
+    return () => {
+      presence.close();
+      peerRef.current?.close();
+    };
+  }, [makePeer, refreshLists, teardownPeer]);
+
+  const onPick = useCallback(async () => {
+    const file = await pickFileToSend();
+    if (file) {
+      setStaged(file);
+      setStatus({kind: 'idle'});
+    }
+  }, []);
+
+  const startSend = useCallback(
+    (target: {kind: 'device' | 'contact'; id: string; label: string}) => {
+      if (!staged) {
+        setStatus({kind: 'failed', text: 'Pick a file first'});
+        return;
+      }
+      if (peerRef.current) teardownPeer();
+      pendingSendRef.current = staged;
+      pendingLabelRef.current = target.label;
+      peerRef.current = makePeer();
+      setStatus({kind: 'calling', label: target.label});
+      const presence = presenceRef.current!;
+      if (target.kind === 'device') presence.callDevice(target.id);
+      else presence.callContact(target.id);
+    },
+    [staged, makePeer, teardownPeer],
+  );
+
+  const busy = status.kind === 'calling' || status.kind === 'sending' || status.kind === 'receiving';
+
   return (
-    <TouchableOpacity
-      style={[styles.button, disabled && styles.buttonDisabled]}
-      onPress={onPress}
-      disabled={disabled}>
-      <Text style={styles.buttonText}>{title}</Text>
-    </TouchableOpacity>
+    <SafeAreaView style={styles.root}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.brand}>OwlSend</Text>
+            <Text style={styles.sub}>{user.displayName}</Text>
+          </View>
+          <View style={styles.presencePill}>
+            <View style={[styles.dot, {backgroundColor: presenceUp ? theme.online : theme.faint}]} />
+            <Text style={styles.presenceText}>{presenceUp ? 'Online' : 'Connecting…'}</Text>
+          </View>
+        </View>
+
+        {/* Staged file / picker */}
+        <TouchableOpacity style={styles.pickBox} onPress={onPick} disabled={busy}>
+          {staged ? (
+            <>
+              <Text style={styles.pickName} numberOfLines={1}>
+                {staged.name}
+              </Text>
+              <Text style={styles.pickSize}>{formatBytes(staged.size)} · tap to change</Text>
+            </>
+          ) : (
+            <Text style={styles.pickPrompt}>+ Pick a file to send</Text>
+          )}
+        </TouchableOpacity>
+
+        {status.kind !== 'idle' && <StatusBar status={status} />}
+
+        {/* Devices */}
+        <Text style={styles.section}>Your devices</Text>
+        {devices.length === 0 ? (
+          <Text style={styles.empty}>No other devices paired.</Text>
+        ) : (
+          devices.map(d => (
+            <Target
+              key={d.id}
+              title={d.label}
+              subtitle={d.platform ?? 'device'}
+              online={onlineDevices.has(d.id)}
+              disabled={busy || !onlineDevices.has(d.id) || !staged}
+              onPress={() => startSend({kind: 'device', id: d.id, label: d.label})}
+            />
+          ))
+        )}
+
+        {/* Contacts */}
+        <Text style={styles.section}>Contacts</Text>
+        {contacts.length === 0 ? (
+          <Text style={styles.empty}>No contacts yet.</Text>
+        ) : (
+          contacts.map(c => (
+            <Target
+              key={c.user.id}
+              title={contactName(c)}
+              subtitle={c.user.email ?? 'contact'}
+              online={onlineContacts.has(c.user.id)}
+              disabled={busy || !onlineContacts.has(c.user.id) || !staged}
+              onPress={() =>
+                startSend({kind: 'contact', id: c.user.id, label: contactName(c)})
+              }
+            />
+          ))
+        )}
+
+        <TouchableOpacity style={styles.btnGhost} onPress={onLogout}>
+          <Text style={styles.btnGhostText}>Unlink this device</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-function Stat({k, v}: {k: string; v: string}) {
+function StatusBar({status}: {status: Status}): React.JSX.Element {
+  let text = '';
+  let pct: number | null = null;
+  let action: (() => void) | null = null;
+  let actionLabel = '';
+  switch (status.kind) {
+    case 'calling':
+      text = `Connecting to ${status.label}…`;
+      break;
+    case 'sending':
+      text = `Sending to ${status.label}`;
+      pct = status.pct;
+      break;
+    case 'receiving':
+      text = `Receiving “${status.name}”`;
+      pct = status.pct;
+      break;
+    case 'done':
+      text = status.text;
+      if (status.shareUrl) {
+        action = () => void Share.share({url: status.shareUrl!}).catch(() => {});
+        actionLabel = 'Share';
+      }
+      break;
+    case 'failed':
+      text = status.text;
+      break;
+  }
   return (
-    <View style={styles.statRow}>
-      <Text style={styles.statKey}>{k}</Text>
-      <Text style={styles.statVal}>{v}</Text>
+    <View style={[styles.statusCard, status.kind === 'failed' && styles.statusFail]}>
+      <Text style={styles.statusText}>{text}</Text>
+      {pct !== null && (
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, {width: `${Math.round(pct * 100)}%`}]} />
+        </View>
+      )}
+      {action && (
+        <TouchableOpacity style={styles.shareBtn} onPress={action}>
+          <Text style={styles.btnGhostText}>{actionLabel}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
 
+function Target({
+  title,
+  subtitle,
+  online,
+  disabled,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  online: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}): React.JSX.Element {
+  return (
+    <TouchableOpacity style={styles.targetRow} onPress={onPress} disabled={disabled}>
+      <View style={[styles.dot, {backgroundColor: online ? theme.online : theme.faint}]} />
+      <View style={{flex: 1}}>
+        <Text style={styles.targetTitle}>{title}</Text>
+        <Text style={styles.targetSub}>{online ? subtitle : `${subtitle} · offline`}</Text>
+      </View>
+      <View style={[styles.sendChip, disabled && styles.sendChipDisabled]}>
+        <Text style={styles.sendChipText}>Send</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: '#121214'},
-  content: {padding: 20, gap: 10},
-  title: {color: '#fff', fontSize: 22, fontWeight: '700'},
-  sub: {color: '#9a9aa2', fontSize: 13, marginBottom: 8},
-  label: {color: '#c8c8d0', fontSize: 13, marginTop: 12},
-  input: {
-    backgroundColor: '#1c1c22',
-    color: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
+  root: {flex: 1, backgroundColor: theme.bg},
+  center: {flex: 1, backgroundColor: theme.bg, alignItems: 'center', justifyContent: 'center'},
+  content: {padding: 20, gap: 12},
+  brand: {color: theme.text, fontSize: 24, fontWeight: '800'},
+  sub: {color: theme.sub, fontSize: 14},
+  headerRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start'},
+  presencePill: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6},
+  presenceText: {color: theme.sub, fontSize: 13},
+  dot: {width: 9, height: 9, borderRadius: 5},
+
+  card: {backgroundColor: theme.card, borderRadius: 14, padding: 18, marginTop: 10},
+  cardTitle: {color: theme.sub, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1},
+  code: {
+    color: theme.text,
+    fontSize: 44,
+    fontWeight: '800',
+    letterSpacing: 8,
+    textAlign: 'center',
+    marginVertical: 14,
   },
-  codeInput: {flex: 1, marginRight: 10},
-  row: {flexDirection: 'row', alignItems: 'center', marginTop: 8},
-  button: {backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 18},
-  buttonDisabled: {opacity: 0.5},
-  buttonText: {color: '#fff', fontWeight: '600', fontSize: 15},
-  stats: {backgroundColor: '#1c1c22', borderRadius: 12, padding: 14, marginTop: 16, gap: 6},
-  statsTitle: {color: '#fff', fontWeight: '700', fontSize: 15, marginBottom: 4},
-  statRow: {flexDirection: 'row', justifyContent: 'space-between'},
-  statKey: {color: '#9a9aa2', fontSize: 14},
-  statVal: {color: '#fff', fontSize: 14, fontWeight: '600'},
-  logBox: {backgroundColor: '#0d0d10', borderRadius: 10, padding: 12, marginTop: 6, minHeight: 80},
-  logLine: {color: '#8a8a92', fontSize: 12, fontFamily: 'monospace'},
+  hint: {color: theme.faint, fontSize: 13, lineHeight: 18},
+  error: {color: theme.danger, fontSize: 14, marginTop: 4},
+
+  pickBox: {
+    backgroundColor: theme.card,
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderStyle: 'dashed',
+  },
+  pickPrompt: {color: theme.accent, fontSize: 16, fontWeight: '600', textAlign: 'center'},
+  pickName: {color: theme.text, fontSize: 16, fontWeight: '600'},
+  pickSize: {color: theme.sub, fontSize: 13, marginTop: 4},
+
+  section: {color: theme.sub, fontSize: 13, marginTop: 16, marginBottom: 2, fontWeight: '700'},
+  empty: {color: theme.faint, fontSize: 14},
+
+  targetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: theme.card,
+    borderRadius: 12,
+    padding: 14,
+  },
+  targetTitle: {color: theme.text, fontSize: 16, fontWeight: '600'},
+  targetSub: {color: theme.sub, fontSize: 13, marginTop: 2},
+  sendChip: {backgroundColor: theme.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8},
+  sendChipDisabled: {opacity: 0.35},
+  sendChipText: {color: theme.text, fontWeight: '700', fontSize: 14},
+
+  statusCard: {backgroundColor: theme.card, borderRadius: 12, padding: 14, gap: 10},
+  statusFail: {borderWidth: 1, borderColor: theme.danger},
+  statusText: {color: theme.text, fontSize: 14},
+  progressTrack: {height: 6, backgroundColor: theme.cardAlt, borderRadius: 3, overflow: 'hidden'},
+  progressFill: {height: 6, backgroundColor: theme.accent},
+  shareBtn: {alignSelf: 'flex-start'},
+
+  btnGhost: {
+    marginTop: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    alignItems: 'center',
+  },
+  btnGhostText: {color: theme.accent, fontWeight: '600', fontSize: 15},
 });
