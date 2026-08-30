@@ -5,7 +5,12 @@ import {
   type RNDataChannel,
 } from '../rtc/webrtc';
 import {api, type IceServerConfig} from '../net/api';
-import {FileReceiver, sendFileOverChannel, type IncomingMeta} from './transfer';
+import {
+  FileReceiver,
+  sendFilesOverChannel,
+  type IncomingMeta,
+  type SendProgress,
+} from './transfer';
 import type {PickedFile} from '../files/pick';
 
 type SignalPayload =
@@ -19,6 +24,10 @@ export interface PeerEvents {
   onIncomingStart?: (meta: IncomingMeta) => void;
   onIncomingProgress?: (received: number, total: number) => void;
   onIncomingFile?: (meta: IncomingMeta, location: string) => void;
+  // Incoming folder transfer.
+  onIncomingFolderStart?: (folderName: string, totalFiles: number) => void;
+  onIncomingFolderProgress?: (filesDone: number, totalFiles: number) => void;
+  onIncomingFolderDone?: (folderName: string, totalFiles: number) => void;
   onError?: (reason: string) => void;
 }
 
@@ -50,6 +59,9 @@ export class TransferPeer {
     this.receiver.onStart = m => this.events.onIncomingStart?.(m);
     this.receiver.onProgress = (r, t) => this.events.onIncomingProgress?.(r, t);
     this.receiver.onFile = (m, loc) => this.events.onIncomingFile?.(m, loc);
+    this.receiver.onFolderStart = (n, t) => this.events.onIncomingFolderStart?.(n, t);
+    this.receiver.onFolderProgress = (d, t) => this.events.onIncomingFolderProgress?.(d, t);
+    this.receiver.onFolderDone = (n, t) => this.events.onIncomingFolderDone?.(n, t);
     this.receiver.onError = reason => this.events.onError?.(reason);
   }
 
@@ -132,14 +144,14 @@ export class TransferPeer {
     return this.channel?.readyState === 'open';
   }
 
-  async sendFile(
-    file: PickedFile,
-    onProgress: (sent: number, total: number) => void,
+  async sendFiles(
+    files: PickedFile[],
+    onProgress: (p: SendProgress) => void,
   ): Promise<void> {
     if (!this.channel || this.channel.readyState !== 'open') {
       throw new Error('channel not open');
     }
-    await sendFileOverChannel(this.channel, file, onProgress);
+    await sendFilesOverChannel(this.channel, files, onProgress);
   }
 
   close(): void {

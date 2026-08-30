@@ -9,19 +9,24 @@ export interface PickedFile {
   mimeType: string;
 }
 
-// Let the user pick one file to send. Returns null if they cancel.
-export async function pickFileToSend(): Promise<PickedFile | null> {
+// Let the user pick one or more files to send. Returns [] if they cancel.
+export async function pickFilesToSend(): Promise<PickedFile[]> {
   try {
-    const [res] = await DocumentPicker.pick({copyTo: 'cachesDirectory'});
-    const uri = res.fileCopyUri ?? res.uri;
-    return {
-      path: uri.replace(/^file:\/\//, ''),
-      name: res.name ?? 'file',
-      size: res.size ?? 0,
-      mimeType: res.type ?? 'application/octet-stream',
-    };
+    const results = await DocumentPicker.pick({
+      allowMultiSelection: true,
+      copyTo: 'cachesDirectory',
+    });
+    return results.map(res => {
+      const uri = res.fileCopyUri ?? res.uri;
+      return {
+        path: uri.replace(/^file:\/\//, ''),
+        name: res.name ?? 'file',
+        size: res.size ?? 0,
+        mimeType: res.type ?? 'application/octet-stream',
+      };
+    });
   } catch (e) {
-    if (isCancel(e)) return null;
+    if (isCancel(e)) return [];
     throw e;
   }
 }

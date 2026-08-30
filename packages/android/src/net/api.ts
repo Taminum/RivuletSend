@@ -49,6 +49,14 @@ export const api = {
     apiFetch<{iceServers: IceServerConfig[]; ttl: number}>('/turn-credentials'),
   listDevices: () => apiFetch<{devices: ApiDevice[]}>('/devices'),
   listContacts: () => apiFetch<ContactsResponse>('/contacts'),
+  // Add a contact by email, or accept an incoming request by the requester's id.
+  addContact: (b: {userId?: string; email?: string}) =>
+    apiFetch<{contact: ContactEntry}>('/contacts', {
+      method: 'POST',
+      body: JSON.stringify(b),
+    }),
+  deleteContact: (userId: string) =>
+    apiFetch<{ok: true}>(`/contacts/${userId}`, {method: 'DELETE'}),
 
   // Pairing: this fresh device asks for a code, then polls until an already
   // signed-in device (web/desktop) approves it — at which point the status

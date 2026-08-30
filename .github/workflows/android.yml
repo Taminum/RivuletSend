@@ -63,6 +63,17 @@ jobs:
         working-directory: packages/android
         run: sed -i 's/minSdkVersion = 23/minSdkVersion = 24/' android/build.gradle
 
+      # The QR scanner (react-native-camera-kit) needs the CAMERA permission; the
+      # RN template manifest only declares INTERNET. Inject it right after.
+      - name: Add CAMERA permission
+        working-directory: packages/android
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
+            sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />#' "$MANIFEST"
+          fi
+          grep permission "$MANIFEST"
+
       # Release, not debug: a debug APK loads its JS from a Metro dev server, so
       # it can't run standalone on a sideloaded phone ("Unable to load script").
       # Release bundles the JS into the APK; the RN template signs release with

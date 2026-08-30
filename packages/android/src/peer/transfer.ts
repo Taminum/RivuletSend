@@ -33,16 +33,13 @@ function waitForDrain(channel: RNDataChannel): Promise<void> {
   });
 }
 
-// Stream one picked file over the channel with the file-start / chunk / file-end
-// protocol the web + desktop receivers already speak.
-export async function sendFileOverChannel(
+// Stream one file's body over the channel (file-start / chunk / file-end).
+async function streamOne(
   channel: RNDataChannel,
   file: PickedFile,
-  onProgress: (sent: number, total: number) => void,
+  onSent: (sentInFile: number) => void,
 ): Promise<void> {
-  channel.bufferedAmountLowThreshold = LOW_WATER_MARK;
   const id = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
-
   sendControl(channel, {
     type: 'file-start',
     id,
@@ -57,7 +54,6 @@ export async function sendFileOverChannel(
   try {
     while (offset < file.size) {
       const winEnd = Math.min(offset + READ_WINDOW, file.size);
-      // Materialize this window to a temp file, then read it as base64 in one go.
       await fs.slice(file.path, tmp, offset, winEnd);
       const windowBytes = base64ToBytes(await fs.readFile(tmp, 'base64'));
 
@@ -67,11 +63,10 @@ export async function sendFileOverChannel(
         const end = Math.min(p + CHUNK_SIZE, windowBytes.byteLength);
         const chunk = windowBytes.subarray(p, end);
         sendControl(channel, {type: 'chunk', id, seq});
-        // Copy into a standalone ArrayBuffer so peers receive a binary chunk.
         channel.send(chunk.slice().buffer);
         p = end;
         seq += 1;
-        onProgress(offset + p, file.size);
+        onSent(offset + p);
       }
       offset = winEnd;
     }
@@ -82,6 +77,56 @@ export async function sendFileOverChannel(
   sendControl(channel, {type: 'file-end', id});
 }
 
+export interface SendProgress {
+  filesDone: number;
+  totalFiles: number;
+  currentName: string;
+  sentBytes: number; // across the whole batch
+  totalBytes: number;
+}
+
+// Send one or more files over the channel, sequentially. Multiple files are just
+// back-to-back single-file transfers on the same ordered channel — the receiver
+// handles each independently. (Folder trees aren't sent from the phone yet.)
+export async function sendFilesOverChannel(
+  channel: RNDataChannel,
+  files: PickedFile[],
+  onProgress: (p: SendProgress) => void,
+): Promise<void> {
+  channel.bufferedAmountLowThreshold = LOW_WATER_MARK;
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  let doneBytes = 0;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    await streamOne(channel, file, sentInFile => {
+      onProgress({
+        filesDone: i,
+        totalFiles: files.length,
+        currentName: file.name,
+        sentBytes: doneBytes + sentInFile,
+        totalBytes,
+      });
+    });
+    doneBytes += file.size;
+    onProgress({
+      filesDone: i + 1,
+      totalFiles: files.length,
+      currentName: file.name,
+      sentBytes: doneBytes,
+      totalBytes,
+    });
+  }
+}
+
+// Kept for callers that send exactly one file.
+export function sendFileOverChannel(
+  channel: RNDataChannel,
+  file: PickedFile,
+  onProgress: (sent: number, total: number) => void,
+): Promise<void> {
+  return sendFilesOverChannel(channel, [file], p => onProgress(p.sentBytes, p.totalBytes));
+}
+
 export interface IncomingMeta {
   id: string;
   name: string;
@@ -89,20 +134,37 @@ export interface IncomingMeta {
   mimeType: string;
 }
 
-// Consumes datachannel messages for an incoming single-file transfer and streams
-// the bytes to disk. Folder/encrypted transfers are ignored for now (a later
-// milestone) — a manifest message simply isn't handled.
+interface InProgress {
+  sink: ReceiveSink;
+  meta: IncomingMeta;
+  received: number;
+  // Set for files that belong to a folder transfer.
+  parentFolder?: string;
+}
+
+function dirName(relativePath: string): string {
+  const parts = relativePath.split('/').filter(Boolean);
+  parts.pop();
+  return parts.join('/');
+}
+
+// Consumes datachannel messages and streams incoming files to disk. Handles a
+// single file, several files in a row, and folder transfers (a `manifest`
+// followed by each file). Encrypted transfers are rejected loudly rather than
+// written as ciphertext — RN has no WebCrypto to decrypt them (a later milestone).
 export class FileReceiver {
-  private sink: ReceiveSink | null = null;
-  private meta: IncomingMeta | null = null;
-  private received = 0;
+  private current: InProgress | null = null;
   private pendingSeq: number | null = null;
-  // Serialize disk appends so chunks land in order and finish awaits them all.
   private writeChain: Promise<void> = Promise.resolve();
+  private folder: {name: string; entries: Map<string, string>} | null = null;
+  private folderDone = 0;
 
   onStart: (meta: IncomingMeta) => void = () => {};
   onProgress: (received: number, total: number) => void = () => {};
   onFile: (meta: IncomingMeta, location: string) => void = () => {};
+  onFolderStart: (folderName: string, totalFiles: number) => void = () => {};
+  onFolderProgress: (filesDone: number, totalFiles: number) => void = () => {};
+  onFolderDone: (folderName: string, totalFiles: number) => void = () => {};
   onError: (reason: string) => void = () => {};
 
   handleMessage(data: string | ArrayBuffer): void {
@@ -121,16 +183,42 @@ export class FileReceiver {
 
   private async handleControl(msg: DataChannelMessage): Promise<void> {
     switch (msg.type) {
+      case 'manifest': {
+        if (msg.crypto) {
+          this.onError('encrypted_unsupported');
+          return;
+        }
+        this.folder = {
+          name: msg.folderName || 'folder',
+          entries: new Map(msg.entries.map(e => [e.id, e.relativePath])),
+        };
+        this.folderDone = 0;
+        this.onFolderStart(this.folder.name, msg.entries.length);
+        break;
+      }
       case 'file-start': {
+        if (msg.crypto || msg.encName) {
+          this.onError('encrypted_unsupported');
+          return;
+        }
+        let sink: ReceiveSink;
         try {
-          this.sink = await createReceiveSink(msg.id);
+          sink = await createReceiveSink(msg.id);
         } catch {
           this.onError('sink_init_failed');
           return;
         }
-        this.meta = {id: msg.id, name: msg.name, size: msg.size, mimeType: msg.mimeType};
-        this.received = 0;
-        this.onStart(this.meta);
+        const relativePath = this.folder?.entries.get(msg.id);
+        this.current = {
+          sink,
+          meta: {id: msg.id, name: msg.name, size: msg.size, mimeType: msg.mimeType},
+          received: 0,
+          parentFolder:
+            relativePath !== undefined
+              ? [this.folder!.name, dirName(relativePath)].filter(Boolean).join('/')
+              : undefined,
+        };
+        if (this.current.parentFolder === undefined) this.onStart(this.current.meta);
         break;
       }
       case 'chunk':
@@ -139,43 +227,55 @@ export class FileReceiver {
       case 'file-end':
         this.finish();
         break;
-      // manifest / resume-* are not handled in this milestone.
+      // resume-* are not handled in this milestone.
     }
   }
 
   private handleChunk(data: ArrayBuffer): void {
-    if (this.pendingSeq === null || !this.sink || !this.meta) return;
+    if (this.pendingSeq === null || !this.current) return;
     this.pendingSeq = null;
-    const sink = this.sink;
+    const cur = this.current;
     const bytes = new Uint8Array(data);
-    this.received += bytes.byteLength;
+    cur.received += bytes.byteLength;
     const b64 = bytesToBase64(bytes);
     this.writeChain = this.writeChain
-      .then(() => sink.appendBase64(b64))
+      .then(() => cur.sink.appendBase64(b64))
       .catch(err => {
         this.onError('write_failed');
         throw err;
       });
     this.writeChain.catch(() => {});
-    this.onProgress(this.received, this.meta.size);
+    if (cur.parentFolder === undefined) this.onProgress(cur.received, cur.meta.size);
   }
 
   private finish(): void {
-    const sink = this.sink;
-    const meta = this.meta;
-    if (!sink || !meta) return;
-    this.sink = null;
-    this.meta = null;
+    const cur = this.current;
+    if (!cur) return;
+    this.current = null;
+    const isFolderFile = cur.parentFolder !== undefined;
     void this.writeChain
-      .then(() => sink.finish(meta.name, meta.mimeType))
-      .then(location => this.onFile(meta, location))
+      .then(() => cur.sink.finish(cur.meta.name, cur.meta.mimeType, cur.parentFolder ?? ''))
+      .then(location => {
+        if (isFolderFile) {
+          this.folderDone += 1;
+          const total = this.folder?.entries.size ?? this.folderDone;
+          this.onFolderProgress(this.folderDone, total);
+          if (this.folderDone >= total) {
+            const name = this.folder?.name ?? 'folder';
+            this.folder = null;
+            this.onFolderDone(name, total);
+          }
+        } else {
+          this.onFile(cur.meta, location);
+        }
+      })
       .catch(() => this.onError('write_failed'));
   }
 
   async abort(): Promise<void> {
-    const sink = this.sink;
-    this.sink = null;
-    this.meta = null;
-    if (sink) await sink.discard();
+    const cur = this.current;
+    this.current = null;
+    this.folder = null;
+    if (cur) await cur.sink.discard();
   }
 }

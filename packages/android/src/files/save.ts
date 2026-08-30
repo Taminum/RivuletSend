@@ -12,7 +12,8 @@ export interface ReceiveSink {
   tempPath: string;
   appendBase64(b64: string): Promise<void>;
   // Publish to Downloads; returns a user-facing location (content URI or path).
-  finish(name: string, mimeType: string): Promise<string>;
+  // parentFolder places it in a subfolder of Downloads (used for folder receives).
+  finish(name: string, mimeType: string, parentFolder?: string): Promise<string>;
   discard(): Promise<void>;
 }
 
@@ -27,10 +28,10 @@ export async function createReceiveSink(id: string): Promise<ReceiveSink> {
     async appendBase64(b64: string) {
       await fs.appendFile(tempPath, b64, 'base64');
     },
-    async finish(name: string, mimeType: string) {
+    async finish(name: string, mimeType: string, parentFolder = '') {
       try {
         const uri = await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
-          {name, parentFolder: '', mimeType: mimeType || 'application/octet-stream'},
+          {name, parentFolder, mimeType: mimeType || 'application/octet-stream'},
           'Download',
           tempPath,
         );
