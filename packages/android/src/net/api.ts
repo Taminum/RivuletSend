@@ -32,6 +32,17 @@ export interface ContactsResponse {
   incoming: ContactEntry[];
 }
 
+export interface ApiTransfer {
+  id: string;
+  direction: 'sent' | 'received';
+  fileName: string;
+  fileSize: string;
+  status: 'completed' | 'failed';
+  failureReason: string | null;
+  createdAt: string;
+  counterpart: ApiUser | null;
+}
+
 export function contactName(entry: ContactEntry): string {
   return entry.alias?.trim() || entry.user.displayName;
 }
@@ -57,6 +68,25 @@ export const api = {
     }),
   deleteContact: (userId: string) =>
     apiFetch<{ok: true}>(`/contacts/${userId}`, {method: 'DELETE'}),
+
+  // transfers / history
+  listTransfers: () => apiFetch<{transfers: ApiTransfer[]}>('/transfers'),
+  createTransfer: (b: {
+    recipientUserId?: string;
+    fileName: string;
+    fileSize: number | string;
+    status: 'completed' | 'failed';
+    failureReason?: string;
+  }) => apiFetch<{transfer: ApiTransfer}>('/transfers', {method: 'POST', body: JSON.stringify(b)}),
+
+  // linked devices
+  renameDevice: (id: string, label: string) =>
+    apiFetch<{ok: true; label: string}>(`/devices/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({label}),
+    }),
+  revokeDevice: (id: string) =>
+    apiFetch<{ok: true}>(`/devices/${id}/revoke`, {method: 'POST'}),
 
   // Pairing: this fresh device asks for a code, then polls until an already
   // signed-in device (web/desktop) approves it — at which point the status

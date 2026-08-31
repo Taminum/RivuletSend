@@ -17,8 +17,11 @@ type SignalPayload =
   | {kind: 'sdp'; description: RTCSessionDescriptionInit}
   | {kind: 'candidate'; candidate: RTCIceCandidateInit};
 
+export type ConnectionType = 'direct' | 'relay' | 'unknown';
+
 export interface PeerEvents {
   onConnected?: () => void; // data channel is open, ready to send/receive
+  onConnectionType?: (type: ConnectionType) => void;
   onDisconnected?: () => void; // channel/connection closed
   // Incoming file (this peer is the receiver).
   onIncomingStart?: (meta: IncomingMeta) => void;
@@ -105,11 +108,39 @@ export class TransferPeer {
   private setupChannel(channel: RNDataChannel): void {
     this.channel = channel;
     channel.binaryType = 'arraybuffer';
-    channel.addEventListener('open', () => this.events.onConnected?.());
+    channel.addEventListener('open', () => {
+      this.events.onConnected?.();
+      // Let ICE settle, then report whether we're peer-to-peer or relayed.
+      setTimeout(() => void this.reportConnectionType(), 1200);
+    });
     channel.addEventListener('message', (event: any) =>
       this.receiver.handleMessage(event.data),
     );
     channel.addEventListener('close', () => this.events.onDisconnected?.());
+  }
+
+  // Inspect the selected ICE candidate pair: if either end is a TURN relay the
+  // path is relayed, otherwise it's a direct peer-to-peer connection.
+  private async reportConnectionType(): Promise<void> {
+    const pc = this.pc;
+    if (!pc) return;
+    try {
+      const stats: Map<string, any> = await (pc as any).getStats();
+      let pair: any = null;
+      stats.forEach((s: any) => {
+        if (s.type === 'candidate-pair' && (s.nominated || s.selected || s.state === 'succeeded')) {
+          if (!pair || (s.bytesSent ?? 0) >= (pair.bytesSent ?? 0)) pair = s;
+        }
+      });
+      if (!pair) return this.events.onConnectionType?.('unknown');
+      const local = stats.get(pair.localCandidateId);
+      const remote = stats.get(pair.remoteCandidateId);
+      const relayed =
+        local?.candidateType === 'relay' || remote?.candidateType === 'relay';
+      this.events.onConnectionType?.(relayed ? 'relay' : 'direct');
+    } catch {
+      this.events.onConnectionType?.('unknown');
+    }
   }
 
   handleSignal(payload: unknown): void {
